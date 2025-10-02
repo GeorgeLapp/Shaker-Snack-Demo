@@ -1,53 +1,73 @@
-import { FC, useEffect } from 'react';
+import { FC, useEffect, useMemo } from 'react';
 import { SaleWorkflowProps } from './types';
 import { Modal } from '@consta/uikit/Modal';
 import styles from './SaleWorkflow.module.scss';
 import { IconClose } from '@consta/icons/IconClose';
 import HorizontalContainer from '../../../../components/HorizontalContainer';
 import { useAppDispatch, useAppSelector } from '../../../../app/hooks/store';
-import { startSaleWorkflow } from '../../../../state/client/action';
+import { cancelSaleWorkflow, startSaleWorkflow } from '../../../../state/client/action';
 import { selectSaleWorkflowStatus } from '../../../../state/client/selectors';
 import { SaleWorkflowStatus } from '../../../../types/enums/SaleWorkflowStatus';
 import { Text } from '@consta/uikit/Text';
 import VerticalContainer from '../../../../components/VerticalContainer';
 import { IconAwaitingCard } from '../../../../assets/icon/iconAwaitindCard';
-import { IconDispensing } from '../../../../assets/icon/iconDispensing';
 import { IconDispensed } from '../../../../assets/icon/iconDispensed';
 import { IconPaymentFailed } from '../../../../assets/icon/iconPaymentFailed';
 import classNames from 'classnames';
 
-/**
- * Процесс оплаты и выдачи товара
- */
+const SUCCESS_DESCRIPTION = 'Возьмите лакомство и наслаждайтесь!';
+
+const ERROR_PAYMENT_DESCRIPTION =
+  'Списание средств не удалось. Проверьте карту или попробуйте выбрать другой товар.';
+
+const ERROR_DISPENSE_DESCRIPTION =
+  'Товар не был выдан. Обратитесь в сервисную службу или выберите другой продукт.';
+
 const SaleWorkflow: FC<SaleWorkflowProps> = ({ cell, onClose }) => {
   const dispatch = useAppDispatch();
-
   const workflowSaleStatus = useAppSelector(selectSaleWorkflowStatus());
-
-  const isError = [SaleWorkflowStatus.PaymentFailed, SaleWorkflowStatus.DispenseFailed].includes(
-    workflowSaleStatus,
-  );
-
-  const isSHowCloseButton = [
-    SaleWorkflowStatus.AwaitingCard,
-    SaleWorkflowStatus.Dispensed,
-    SaleWorkflowStatus.PaymentFailed,
-    SaleWorkflowStatus.DispenseFailed,
-  ].includes(workflowSaleStatus);
 
   useEffect(() => {
     dispatch(startSaleWorkflow(cell));
+
+    return () => {
+      dispatch(cancelSaleWorkflow());
+    };
   }, [dispatch, cell]);
 
-  // render методы
+  const handleClose = () => {
+    dispatch(cancelSaleWorkflow());
+    onClose();
+  };
+
+  const retryPayment = () => {
+    dispatch(startSaleWorkflow(cell));
+  };
+
+  const isError =
+    workflowSaleStatus === SaleWorkflowStatus.PaymentFailed ||
+    workflowSaleStatus === SaleWorkflowStatus.DispenseFailed;
+
+  const isCloseAllowed = useMemo(
+    () =>
+      [
+        SaleWorkflowStatus.AwaitingCard,
+        SaleWorkflowStatus.PaymentSuccess,
+        SaleWorkflowStatus.Dispensed,
+        SaleWorkflowStatus.PaymentFailed,
+        SaleWorkflowStatus.DispenseFailed,
+      ].includes(workflowSaleStatus),
+    [workflowSaleStatus],
+  );
+
   const renderModalHeader = () => (
     <HorizontalContainer className={styles.header} justify="end">
-      {isSHowCloseButton && (
+      {isCloseAllowed && (
         <HorizontalContainer
           className={styles.buttonClose}
           align="center"
           justify="center"
-          onClick={onClose}
+          onClick={handleClose}
         >
           <IconClose className={styles.iconClose} />
         </HorizontalContainer>
@@ -73,8 +93,8 @@ const SaleWorkflow: FC<SaleWorkflowProps> = ({ cell, onClose }) => {
           status === 'error'
             ? styles.errorText
             : status === 'success'
-              ? styles.successText
-              : styles.defaultText
+            ? styles.successText
+            : styles.defaultText
         }
         size="4xl"
         weight="semibold"
@@ -94,52 +114,65 @@ const SaleWorkflow: FC<SaleWorkflowProps> = ({ cell, onClose }) => {
         return renderContentWrapper({
           title: 'Приложите карту к терминалу',
           status: 'default',
-          description: 'Либо дождитесь появления QR-кода для оплаты СБП',
+          description: 'Держите карту у считывателя, пока мы подтверждаем оплату.',
           icon: <IconAwaitingCard className={classNames(styles.icon, styles.defaultIcon)} />,
         });
-      case SaleWorkflowStatus.Dispensing:
+      case SaleWorkflowStatus.PaymentSuccess:
         return renderContentWrapper({
           title: 'Оплата прошла успешно',
-          status: 'default',
-          description: 'Дождитесь выдачи товара',
-          icon: <IconDispensing className={classNames(styles.icon, styles.defaultIcon)} />,
+          status: 'success',
+          description: 'Готовим ваш товар к выдаче. Это займёт всего несколько секунд.',
+          icon: <IconDispensed className={classNames(styles.icon, styles.successIcon)} />,
         });
       case SaleWorkflowStatus.Dispensed:
         return renderContentWrapper({
           title: 'Товар успешно выдан',
           status: 'success',
-          description: 'Спасибо за покупку!',
+          description: SUCCESS_DESCRIPTION,
           icon: <IconDispensed className={classNames(styles.icon, styles.successIcon)} />,
         });
       case SaleWorkflowStatus.PaymentFailed:
         return renderContentWrapper({
           title: 'Ошибка оплаты',
           status: 'error',
-          description: 'Попробуйте повторно или проверьте баланс',
+          description: ERROR_PAYMENT_DESCRIPTION,
           icon: <IconPaymentFailed className={classNames(styles.icon, styles.errorIcon)} />,
         });
       case SaleWorkflowStatus.DispenseFailed:
         return renderContentWrapper({
           title: 'Ошибка выдачи товара',
           status: 'error',
-          description: 'Вредства скоро вернуться на карту',
-          icon: <IconAwaitingCard className={classNames(styles.icon, styles.errorIcon)} />,
+          description: ERROR_DISPENSE_DESCRIPTION,
+          icon: <IconPaymentFailed className={classNames(styles.icon, styles.errorIcon)} />,
         });
+      default:
+        return null;
     }
   };
 
-  const renderAction = () => (
-    <HorizontalContainer
-      className={styles.action}
-      align="center"
-      justify="center"
-      onClick={() => dispatch(startSaleWorkflow(cell))}
-    >
-      <Text className={styles.text} size="3xl">
-        Попробовать ещё раз
-      </Text>
-    </HorizontalContainer>
-  );
+  const renderAction = () => {
+    if (workflowSaleStatus === SaleWorkflowStatus.PaymentFailed) {
+      return (
+        <HorizontalContainer className={styles.action} align="center" justify="center" onClick={retryPayment}>
+          <Text className={styles.text} size="3xl">
+            Повторить оплату
+          </Text>
+        </HorizontalContainer>
+      );
+    }
+
+    if (workflowSaleStatus === SaleWorkflowStatus.DispenseFailed) {
+      return (
+        <HorizontalContainer className={styles.action} align="center" justify="center" onClick={handleClose}>
+          <Text className={styles.text} size="3xl">
+            Повторить попытку
+          </Text>
+        </HorizontalContainer>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <Modal className={styles.SaleWorkflow} isOpen>

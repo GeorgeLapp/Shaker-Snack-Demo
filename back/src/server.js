@@ -163,14 +163,14 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/start-sale') {
       const payload = await parseJsonBody(req);
-      const data = startSale(payload);
+      const data = await startSale(payload);
       sendJson(res, 200, data);
       return;
     }
 
     if (req.method === 'POST' && pathname === '/api/issue-product') {
       const payload = await parseJsonBody(req);
-      const data = issueProduct(payload);
+      const data = await issueProduct(payload);
       sendJson(res, 200, data);
       return;
     }

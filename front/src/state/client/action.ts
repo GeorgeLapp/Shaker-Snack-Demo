@@ -1,41 +1,71 @@
-import { AppDispatch } from '../../app/store';
+import { AppDispatch, RootState } from '../../app/store';
 import { getProductMatrixThunk, issueProductThunk, startSaleThunk } from './thunk';
 import { IssueProductDTO } from '../../types/serverInterface/IssueProductDTO';
 import { StartSaleDTO } from '../../types/serverInterface/StartSaleDTO';
+import {
+  beginSaleWorkflow,
+  resetSaleWorkflowState,
+  updateSaleWorkflowStatus,
+} from './slice';
+import { SaleWorkflowStatus } from '../../types/enums/SaleWorkflowStatus';
 
-/**
- * Действие для получения матрицы продуктов.
- *
- * Запускает `getProductMatrixThunk`, который выполняет асинхронный запрос на сервер
- * для получения конфигурации товаров в автомате.
- *
- * @returns {Function} Thunk-функция, принимающая `dispatch: AppDispatch` и возвращающая результат выполнения `getProductMatrixThunk`.
- *                    Как правило это промис, который резолвится данными `ProductMatrixDTO`.
- * @example
- * dispatch(getProductMatrixAction());
- */
+const MIN_PAYMENT_STAGE_DURATION_MS = 5000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const createWorkflowId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const isWorkflowActive = (state: RootState, workflowId: string) =>
+  state.client.activeWorkflow.workflowId === workflowId;
+
+const ensurePaymentStageDuration = async (startedAt: number) => {
+  const elapsed = Date.now() - startedAt;
+  if (elapsed < MIN_PAYMENT_STAGE_DURATION_MS) {
+    await sleep(MIN_PAYMENT_STAGE_DURATION_MS - elapsed);
+  }
+};
+
 export const getProductMatrixAction = () => (dispatch: AppDispatch) =>
   dispatch(getProductMatrixThunk());
 
-/**
- * Запускает полный workflow продажи: сначала инициация продажи, затем выдача товара.
- *
- * Последовательность:
- * 1. Диспатчится `startSaleThunk(data)` — инициация/регистрация продажи на сервере.
- * 2. По успешному завершению `startSaleThunk` выполняется `issueProductThunk(data)` — запрос на выдачу товара.
- *
- * Обратите внимание:
- * - Если `startSaleThunk` отклонён (reject), `issueProductThunk` не будет запущен.
- * - Рекомендуется обрабатывать возможные ошибки (reject) при вызове `startSaleWorkflow`.
- *
- * @param {IssueProductDTO & StartSaleDTO} data — объединённые данные, необходимые и для старта продажи, и для запроса выдачи.
- *                                              Обычно содержит `saleId`/`productId`/ячейку/сумму и т.п.
- * @returns {Function} Thunk-функция, принимающая `dispatch: AppDispatch` и возвращающая промис цепочки:
- *                     результат `startSaleThunk(data)` затем `issueProductThunk(data)`.
- *                     В случае ошибки промис будет отклонён с причиной от соответствующего thunk.
- * @example
- * dispatch(startSaleWorkflow({ saleId: '...', productId: 'A1', price: 100 }));
- */
+export const cancelSaleWorkflow = () => (dispatch: AppDispatch) => {
+  dispatch(resetSaleWorkflowState());
+};
+
 export const startSaleWorkflow =
-  (data: IssueProductDTO & StartSaleDTO) => (dispatch: AppDispatch) =>
-    dispatch(startSaleThunk(data)).then(() => dispatch(issueProductThunk(data)));
+  (data: IssueProductDTO & StartSaleDTO) => async (dispatch: AppDispatch, getState: () => RootState) => {
+    const workflowId = createWorkflowId();
+
+    dispatch(beginSaleWorkflow({ workflowId, cellNumber: data.cellNumber }));
+
+    try {
+      await dispatch(startSaleThunk(data)).unwrap();
+    } catch (error) {
+      if (isWorkflowActive(getState(), workflowId)) {
+        dispatch(updateSaleWorkflowStatus({ workflowId, status: SaleWorkflowStatus.PaymentFailed }));
+      }
+      return;
+    }
+
+    if (!isWorkflowActive(getState(), workflowId)) {
+      return;
+    }
+
+    dispatch(updateSaleWorkflowStatus({ workflowId, status: SaleWorkflowStatus.PaymentSuccess }));
+    const paymentStageStartedAt = Date.now();
+
+    try {
+      await dispatch(issueProductThunk(data)).unwrap();
+      await ensurePaymentStageDuration(paymentStageStartedAt);
+      if (!isWorkflowActive(getState(), workflowId)) {
+        return;
+      }
+      dispatch(updateSaleWorkflowStatus({ workflowId, status: SaleWorkflowStatus.Dispensed }));
+    } catch (error) {
+      await ensurePaymentStageDuration(paymentStageStartedAt);
+      if (!isWorkflowActive(getState(), workflowId)) {
+        return;
+      }
+      dispatch(updateSaleWorkflowStatus({ workflowId, status: SaleWorkflowStatus.DispenseFailed }));
+    }
+  };

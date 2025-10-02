@@ -1,9 +1,14 @@
 import { errorHandler, NotificationType } from '../handlers';
-import { createSlice, isRejected } from '@reduxjs/toolkit';
-import { getProductMatrixThunk, issueProductThunk, startSaleThunk } from './thunk';
+import { createSlice, isRejected, PayloadAction } from '@reduxjs/toolkit';
+import { getProductMatrixThunk } from './thunk';
 import { ProductMatrixItem, ProductMatrixUi } from '../../types/serverInterface/ProductMatrixDTO';
 import { toProductMatrixUi } from './helpers';
 import { SaleWorkflowStatus } from '../../types/enums/SaleWorkflowStatus';
+
+const createInitialWorkflowState = () => ({
+  workflowId: null as string | null,
+  cellNumber: null as number | null,
+});
 
 type StateItemType<T> = {
   state: T extends [] ? T : T | null;
@@ -16,6 +21,7 @@ export type ClientState = {
   productCellMap: Record<number, ProductMatrixItem>;
   saleWorkflowStatus: SaleWorkflowStatus;
   notifications: NotificationType[];
+  activeWorkflow: ReturnType<typeof createInitialWorkflowState>;
 };
 
 const initialState: ClientState = {
@@ -25,16 +31,11 @@ const initialState: ClientState = {
     isReject: false,
   },
   productCellMap: {},
-  saleWorkflowStatus: SaleWorkflowStatus.AwaitingCard,
+  saleWorkflowStatus: SaleWorkflowStatus.Idle,
   notifications: [],
+  activeWorkflow: createInitialWorkflowState(),
 };
 
-/**
- * Добавление уведомления
- *
- * @param state состояние
- * @param notification новое уведомление
- */
 const addNotification = (state: ClientState) => (notification: NotificationType) => {
   const arr = [...state.notifications];
   arr.push(notification);
@@ -42,18 +43,42 @@ const addNotification = (state: ClientState) => (notification: NotificationType)
   state.notifications = arr;
 };
 
-export const clientSlice = createSlice({
+const clientSlice = createSlice({
   name: 'client',
   initialState,
-  reducers: {},
+  reducers: {
+    beginSaleWorkflow: (
+      state,
+      action: PayloadAction<{ workflowId: string; cellNumber: number }>,
+    ) => {
+      state.activeWorkflow = {
+        workflowId: action.payload.workflowId,
+        cellNumber: action.payload.cellNumber,
+      };
+      state.saleWorkflowStatus = SaleWorkflowStatus.AwaitingCard;
+    },
+    updateSaleWorkflowStatus: (
+      state,
+      action: PayloadAction<{ workflowId: string; status: SaleWorkflowStatus }>,
+    ) => {
+      if (state.activeWorkflow.workflowId !== action.payload.workflowId) {
+        return;
+      }
+
+      state.saleWorkflowStatus = action.payload.status;
+    },
+    resetSaleWorkflowState: (state) => {
+      state.saleWorkflowStatus = SaleWorkflowStatus.Idle;
+      state.activeWorkflow = createInitialWorkflowState();
+    },
+  },
   extraReducers: (builder) => {
-    // getProductMatrixThunk
-    builder.addCase(getProductMatrixThunk.pending, (state, action) => {
+    builder.addCase(getProductMatrixThunk.pending, (state) => {
       state.productMatrix.isLoading = true;
       state.productMatrix.isReject = false;
     });
 
-    builder.addCase(getProductMatrixThunk.rejected, (state, action) => {
+    builder.addCase(getProductMatrixThunk.rejected, (state) => {
       state.productMatrix.isLoading = false;
       state.productMatrix.isReject = true;
     });
@@ -70,36 +95,19 @@ export const clientSlice = createSlice({
       );
     });
 
-    // startSaleThunk
-    builder.addCase(startSaleThunk.pending, (state) => {
-      state.saleWorkflowStatus = SaleWorkflowStatus.AwaitingCard;
-    });
-
-    builder.addCase(startSaleThunk.rejected, (state) => {
-      state.saleWorkflowStatus = SaleWorkflowStatus.PaymentFailed;
-    });
-
-    builder.addCase(startSaleThunk.fulfilled, (state) => {
-      state.saleWorkflowStatus = SaleWorkflowStatus.Dispensing;
-    });
-
-    // issueProductThunk
-    builder.addCase(issueProductThunk.pending, (state) => {
-      state.saleWorkflowStatus = SaleWorkflowStatus.Dispensing;
-    });
-
-    builder.addCase(issueProductThunk.rejected, (state) => {
-      state.saleWorkflowStatus = SaleWorkflowStatus.DispenseFailed;
-    });
-
-    builder.addCase(issueProductThunk.fulfilled, (state) => {
-      state.saleWorkflowStatus = SaleWorkflowStatus.Dispensed;
-    });
-
     builder.addMatcher(isRejected(), (state, action) => {
       errorHandler(action)(addNotification(state));
     });
   },
 });
 
+export const {
+  beginSaleWorkflow,
+  updateSaleWorkflowStatus,
+  resetSaleWorkflowState,
+} = clientSlice.actions;
+
 export const clientReducer = clientSlice.reducer;
+
+
+

@@ -1,0 +1,14 @@
+{
+  "name": "shaker-snack-backend",
+  "version": "1.0.0",
+  "description": "Backend server for Shaker Snack Demo",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.0.0"
+  }
+}

@@ -1,0 +1,32 @@
+.TableHeader {
+  background-color: var(--bg-main-primary);
+  padding: var(--space-l) var(--space-4xl);
+  border-radius: var(--card-radius);
+
+  .columnTitle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  .cellRight {
+    justify-content: flex-end;
+  }
+}
+
+.selectedSortButton {
+  background-color: var(--control-clear-bg-bg-select);
+  color: var(--control-clear-typo-typo-select);
+}
+
+.sortContextMenu {
+  width: 268px;
+  min-height: 100px;
+  padding: var(--space-xl) var(--space-m);
+  justify-content: center;
+  align-items: flex-start;
+  border-radius: var(--control-radius-round-l);
+  background-color: var(--bg-main-body);
+
+  border: 1px solid var(--bg-border-primary);
+}

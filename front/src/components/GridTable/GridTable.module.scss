@@ -1,0 +1,39 @@
+.gridTable {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.gridRow {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.rowHeader {
+  display: flex;
+  align-items: center;
+  background: var(--bg-main-quaternary);
+  padding: var(--space-xs) var(--space-l);
+  border-radius: var(--control-radius-round-m) var(--control-radius-round-m) 0 0;
+  box-sizing: border-box;
+}
+
+.defaultRowHeader {
+  width: 100%;
+}
+
+.rowContent {
+  display: grid;
+  padding: var(--space-xs) var(--space-2xs);
+  background-color: var(--bg-main-tertriary);
+  border-bottom: none;
+  border-radius: 0 0 var(--control-radius-round-m) var(--control-radius-round-m);
+  box-sizing: border-box;
+}
+
+.gridCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

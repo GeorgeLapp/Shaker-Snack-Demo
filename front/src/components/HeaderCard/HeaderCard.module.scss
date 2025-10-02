@@ -1,0 +1,10 @@
+$headerCardHeight: calc(220px - 2 * var(--space-2xl));
+$headerCardWidth: calc(100% - 2 * var(--space-3xl));
+
+.headerCard {
+  width: $headerCardWidth;
+  height: $headerCardHeight;
+  border-radius: var(--card-radius);
+  background-color: var(--bg-main-primary);
+  padding: var(--space-3xl);
+}

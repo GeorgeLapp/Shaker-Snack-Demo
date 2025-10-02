@@ -1,0 +1,21 @@
+$contentCardHeight: 100%;
+$contentCardWidth: 100%;
+
+.contentCard {
+  box-sizing: border-box;
+
+  width: $contentCardWidth;
+  height: $contentCardHeight;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  padding: var(--space-l) var(--space-2xl) var(--space-2xl) var(--space-2xl);
+  gap: var(--space-l);
+  align-self: stretch;
+
+  background-color: var(--bg-main-secondary);
+  border-radius: var(--control-radius-round-m);
+  border: none;
+}

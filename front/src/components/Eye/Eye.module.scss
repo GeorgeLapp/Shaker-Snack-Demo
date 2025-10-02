@@ -1,0 +1,27 @@
+$container-size: 44px;
+
+.container {
+  height: $container-size;
+  width: $container-size;
+  position: relative;
+}
+
+.square{
+  height: 100%;
+  width: 100%;
+  position: relative;
+  border-radius: 100%;
+  background: #dfe6e9;
+  box-shadow: inset -10px -5px 0px 0px rgba(178,190,195,.3);
+}
+
+.eyeball {
+  width: 50%;
+  height: 50%;
+  background: #2d3436;
+  position: absolute;
+  left: 25%;
+  top: 25%;
+  border-radius: 100%;
+  overflow: hidden;
+}

@@ -1,0 +1,15 @@
+.BaseTableDataLoader {
+  flex: 1;
+  flex-direction: column;
+  row-gap: var(--space-xs);
+
+  display: flex;
+
+  margin-top: var(--space-xs);
+  padding: 0 var(--space-m);
+
+  .loaderRow {
+    border-radius: var(--control-radius-round-m);
+    width: 100%;
+  }
+}

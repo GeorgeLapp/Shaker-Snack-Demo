@@ -1,0 +1,57 @@
+$textFontSizeM: 14px;
+$textLineHeightSizeM: 20px;
+$textFontSizeS: 12px;
+$textLineHeightSizeS: 14px;
+$paddingSizeS: 6px;
+
+.Counter {
+  align-items: center;
+  gap: var(--space-2xs);
+
+  display: flex;
+
+  border: 1px solid var(--bg-border-tertriary);
+  border-radius: var(--control-radius-round-xs);
+
+  &.success {
+    background: var(--bg-status-success);
+  }
+
+  &.system {
+    background: var(--bg-status-system);
+  }
+
+  &.error {
+    background: var(--counter-bg);
+  }
+
+  &.warning {
+    background: var(--bg-status-warning);
+  }
+
+  &.Size {
+    &_m {
+      padding: var(--space-3xs) var(--space-xs);
+
+      .text {
+        font-size: $textFontSizeM;
+        line-height: $textLineHeightSizeM;
+        font-weight: 500;
+        font-style: normal;
+        color: var(--counter-typo);
+      }
+    }
+
+    &_s {
+      padding: var(--space-3xs) $paddingSizeS;
+
+      .text {
+        font-size: $textFontSizeS;
+        line-height: $textLineHeightSizeS;
+        font-weight: 500;
+        font-style: normal;
+        color: var(--counter-typo);
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+.TableHeaderButton {
+  display: inline-flex;
+  height: var(--control-height-m);
+  padding: 0 var(--space-m);
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+
+  border-radius: var(--control-radius-round-m);
+  background-color: var(--control-clear-bg-bg);
+
+  cursor: pointer;
+
+  .label {
+    color: var(--control-clear-typo-typo);
+    text-align: center;
+    font-size: 16px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 22px; /* 137.5% */
+  }
+
+  &:hover {
+    background-color: var(--control-clear-bg-bg-hover);
+
+    .label {
+      color: var(--control-clear-typo-typo);
+    }
+  }
+
+  .iconLeft {
+
+  }
+
+  .iconRight {
+
+  }
+
+
+}

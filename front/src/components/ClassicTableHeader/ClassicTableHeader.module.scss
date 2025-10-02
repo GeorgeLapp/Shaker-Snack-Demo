@@ -1,0 +1,24 @@
+.ClassicTableHeader {
+  background-color: var(--bg-main-primary);
+  border-bottom: 1px solid var(--bg-split-ghost);
+
+  display: flex;
+  padding: 0 var(--space-2xl);
+  justify-content: space-between;
+  align-items: center;
+
+  height: 48px;
+
+  position: sticky;
+  top: 0;
+}
+
+.checkboxContainer {
+  min-width: var(--checkboxContainer-width);
+  text-align: center;
+  align-self: center;
+}
+
+.laptop {
+  height: 40px;
+}

@@ -1,0 +1,97 @@
+$defaultModal-minWidth: calc(512px - var(--modal-padding-right) - var(--modal-padding-left));
+$defaultModal-minHeight: 100px;
+$headerHeight: 32px;
+$modalContainerPaddingLeft: 80px;
+// TODO: тут сложности реализации. Как-то нужно сделать, что-бы отступ снизу и сверху модального окна был 100
+//  Пока что установлен фиксированный размер. Нужно немного тестов, возможно придётся залезть в компонент модалки
+$defaultModal-top: 60px;
+$miWidthMobileModal: 340px;
+$horizontalContainerPadding: 60px;
+$horizontalContainerMaxHeight: 90vh;
+
+.DefaultModal {
+  box-shadow: none;
+  padding-left: $modalContainerPaddingLeft;
+  max-height: 100% !important;
+
+  &.isMobile {
+    padding-left: 0;
+  }
+
+  .horizontalContainer {
+    overflow: hidden;
+    max-height: $horizontalContainerMaxHeight;
+
+    .defaultModal {
+      top: $defaultModal-top;
+      overflow-y: auto;
+
+      display: flex;
+
+      box-shadow: 0 8px 8px 0 var(--bg-shadow-shadow_1), 0 12px 28px 0 var(--bg-shadow-shadow_1);
+      box-sizing: border-box;
+      border-radius: var(--card-radius);
+      min-width: $defaultModal-minWidth;
+      min-height: $defaultModal-minHeight;
+      padding: var(--space-2xl) 0 var(--space-2xl) var(--space-2xl);
+
+      background-color: var(--bg-main-secondary);
+
+      .header {
+        height: $headerHeight;
+      }
+    }
+
+    .contentContainer {
+      overflow-y: auto;
+
+      scrollbar-color: auto;
+    }
+
+    .isPrint {
+      align-items: start;
+      justify-content: start;
+
+      box-shadow: 0 0 0 0 white;
+      border: 0;
+      border-radius: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .actions,
+    .header,
+    .contentContainer {
+      padding-right: var(--space-2xl);
+    }
+  }
+
+  .closeButton {
+    border: 1px solid var(--control-ghost-border-border);
+
+    background: var(--control-ghost-bg-bg-select);
+  }
+}
+
+.DefaultModalMobile {
+  top: 0;
+
+  padding: var(--space-l);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100dvh;
+  max-width: 100vw;
+  max-height: 100% !important;
+
+  background: var(--bg-main-secondary);
+
+  .main {
+    justify-content: space-between;
+
+    height: 100%;
+
+    .actions {
+      width: 100%;
+    }
+  }
+}

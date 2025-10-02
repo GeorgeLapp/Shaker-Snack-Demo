@@ -1,0 +1,121 @@
+$baseTableHeaderColumnTitleClassNameHeight: 24px;
+$baseTableHeaderClassNameHeight: 24px;
+$baseTableHeaderColumnClassNameHeight: 24px;
+
+.tableContainer {
+  overflow: hidden;
+
+  width: 100%;
+  border-radius: var(--control-radius-round-m);
+
+  background-color: var(--bg-main-secondary);
+
+  &.isLoading {
+    flex: 1;
+  }
+}
+
+// Общее для всех grid контейнеров
+.gridContainerClassName {
+  gap: var(--space-xs);
+}
+
+// settingsBar
+.baseTableSettingsBarClassName {
+  border-bottom: 1px solid var(--bg-border-secondary);
+  padding: var(--space-3xs) var(--space-m) var(--space-3xs) var(--space-l);
+}
+
+.baseTableSettingsBarLeftSideClassName {
+  gap: var(--space-m);
+}
+
+.baseTableSettingsBarRightSideClassName {
+
+}
+
+// header
+.baseTableHeaderClassName {
+  height: $baseTableHeaderClassNameHeight;
+  padding: var(--space-m) calc(var(--space-m) * 2) 0;
+
+  align-items: flex-end;
+}
+
+.baseTableHeaderColumnTitleClassName {
+  height: $baseTableHeaderColumnTitleClassNameHeight;
+}
+
+// data
+.tableDataClassName {
+  margin-top: var(--space-xs);
+  padding: 0 var(--space-m) var(--space-m);
+}
+
+.rowClassName {
+  border-radius: var(--control-radius-round-m);
+  padding: var(--space-xs) var(--space-m);
+
+  background: var(--bg-main-tertriary);
+}
+
+// передаётся в column
+.baseTableHeaderColumnClassName {
+  height: $baseTableHeaderColumnClassNameHeight;
+  gap: var(--space-2xs);
+}
+
+// передаётся в column
+.baseTableDataRowCellClassName {
+
+}
+
+.baseTableSortButtonClassName {
+  display: flex;
+
+  border-radius: var(--control-radius-xs);
+
+  cursor: pointer;
+
+  color: var(--typo-main-secondary);
+
+  &:hover {
+    background-color: var(--control-clear-bg-bg-hover);
+  }
+}
+
+.baseTableDataLoaderClassName {
+
+}
+
+.baseTableSortButtonContextModelClassName {
+  padding: var(--space-m) var(--space-xl) var(--space-xl) var(--space-xl);
+
+  background-color: var(--bg-main-tertriary);
+
+  min-height: 0;
+}
+
+.baseTableFilterButtonContextModalClassName {
+  padding: var(--space-m) var(--space-xl) var(--space-xl) var(--space-xl);
+
+  background-color: var(--bg-main-tertriary);
+
+  min-height: 0;
+}
+
+.baseTableFilterButtonClassName {
+  cursor: pointer;
+
+  border-radius: var(--control-radius-xs);
+
+  color: var(--typo-main-secondary);
+
+  &:hover {
+    background-color: var(--control-clear-bg-bg-hover);
+  }
+}
+
+.baseTableFilterButtonActiveClassName {
+
+}

@@ -1,0 +1,82 @@
+$button-size: 64px;
+$imgWrapper-height: 430px;
+$imgWrapper-width: 720px;
+$generalCard-height: 492px;
+$actionBackground-height: 208px;
+$saleButton-height: 128px;
+$saleButton-width: 720px;
+
+.Product {
+  padding: var(--space-m) var(--space-5xl);
+  height: 100%;
+
+  .back {
+    height: $button-size;
+    width: $button-size;
+
+    --icon-size: 40px !important;
+  }
+
+  .card {
+    border-radius: 20px;
+    background-color: var(--bg-main-secondary);
+    overflow: hidden;
+
+    .cardTitle {
+      padding: var(--space-xs) var(--space-xl);
+
+      background-color: var(--bg-main-quaternary);
+    }
+
+    .cardContent {
+      padding: var(--space-m) var(--space-xl);
+    }
+  }
+
+  .general {
+    height: $generalCard-height;
+
+    .imgWrapper {
+      height: $imgWrapper-height;
+      width: $imgWrapper-width;
+
+      box-sizing: border-box;
+
+      padding: var(--space-2xl) var(--space-6xl);
+
+      .img {
+        max-width: 100%;
+        max-height: 100%;
+      }
+    }
+  }
+
+  .actionSpacer {
+    height: $actionBackground-height;
+  }
+
+  .actionBackground {
+    position: absolute;
+
+    border-radius: 20px 20px 0 0;
+
+    bottom: 0;
+    left: 0;
+
+    width: 100%;
+    height: $actionBackground-height;
+
+    background: var(--bg-main-secondary);
+  }
+
+  .saleButton {
+    height: $saleButton-height;
+    width: $saleButton-width;
+    background: var(--control-primary-bg-bg);
+    border-radius: var(--control-radius-round-s);
+
+    .text {
+      color: var(--control-primary-typo-typo);
+    }
+  }
+}

@@ -1,0 +1,42 @@
+$TablePageSettingsContextModal-minWidth: 200px;
+
+.pageButton {
+  display: flex;
+
+  align-items: center;
+
+  cursor: pointer;
+
+  height: var(--control-height-m);
+  padding: 0 var(--space-m);
+  border-radius: var(--control-radius-m);
+
+  background: var(--control-clear-bg-bg);
+
+  .text {
+    color: var(--control-clear-typo-typo);
+  }
+
+  &:hover {
+    background: var(--control-clear-bg-bg-hover);
+
+    .text {
+      color: var(--control-clear-typo-typo-hover);
+    }
+  }
+
+  &.isOpen {
+    background: var(--control-clear-bg-bg-select);
+
+    .text {
+      color: var(--control-clear-typo-typo-select);
+    }
+  }
+}
+
+.TablePageSettingsContextModal {
+  background-color: var(--bg-main-tertriary);
+
+  min-width: $TablePageSettingsContextModal-minWidth;
+  padding: var(--space-2xl);
+}

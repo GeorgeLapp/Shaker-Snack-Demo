@@ -1,0 +1,78 @@
+$iconClose-size: 32px;
+$buttonClose-size: 64px;
+$icon-size: 164px;
+
+.SaleWorkflow {
+  top: 200px;
+
+  width: 584px;
+  min-height: 100px;
+  max-height: 820px;
+  padding: var(--space-2xl);
+
+  display: flex;
+
+  flex-direction: column;
+  gap: var(--space-xl);
+  border-radius: var(--control-radius-round-s);
+
+  background: var(--bg-main-secondary);
+
+  .header {
+    height: $buttonClose-size;
+
+    .buttonClose {
+      height: $buttonClose-size;
+      width: $buttonClose-size;
+
+      .iconClose {
+        height: $iconClose-size;
+        width: $iconClose-size;
+      }
+    }
+  }
+
+  .content {
+
+    .defaultText {
+      color: var(--typo-main-primary)
+    }
+
+    .successText {
+      color: var(--typo-status-success)
+    }
+
+    .errorText {
+      color: var(--typo-status-alert)
+    }
+
+    .icon {
+      width: $icon-size;
+      height: $icon-size;
+    }
+
+    .defaultIcon {
+      color: var(--typo-main-primary)
+    }
+
+    .successIcon {
+      color: var(--typo-status-success)
+    }
+
+    .errorIcon {
+      color: var(--typo-status-alert)
+    }
+  }
+
+  .action {
+    height: 100px;
+
+    background: var(--control-primary-bg-bg);
+
+    border-radius: var(--control-radius-round-s);
+
+    .text {
+      color: var(--control-primary-typo-typo);
+    }
+  }
+}

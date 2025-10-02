@@ -1,0 +1,10 @@
+$defaultInfoWidth: 620px;
+
+.defaultInfo {
+  flex-direction: column;
+  gap: var(--space-l);
+
+  display: flex;
+
+  width: $defaultInfoWidth;
+}

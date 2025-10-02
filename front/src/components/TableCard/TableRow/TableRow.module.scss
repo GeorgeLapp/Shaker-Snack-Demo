@@ -1,0 +1,16 @@
+.TableRow {
+  background-color: var(--bg-main-secondary);
+  padding: var(--space-l) var(--space-4xl);
+  border-radius: var(--card-radius);
+  cursor: pointer;
+
+  .cell {
+    display: flex;
+    align-items: center;
+  }
+
+  .cellRight {
+    display: flex;
+    justify-content: right;
+  }
+}

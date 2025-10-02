@@ -1,0 +1,40 @@
+.Theme_space_gpnDefault {
+  --space-3xs: 2px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-s: 12px;
+  --space-m: 16px;
+  --space-l: 20px;
+  --space-xl: 24px;
+  --space-2xl: 28px;
+  --space-3xl: 32px;
+  --space-4xl: 36px;
+  --space-5xl: 40px;
+  --space-6xl: 48px;
+  --space-7xl: 72px;
+  --space-8xl: 96px;
+
+  --modal-padding-top: var(--space-3xl);
+  --modal-padding-bottom: var(--space-3xl);
+  --modal-padding-left: var(--space-5xl);
+  --modal-padding-right: var(--space-5xl);
+
+  --modal-padding-action-top: var(--space-xs);
+  --modal-padding-action-bottom: 0;
+  --modal-padding-action-left: 0;
+  --modal-padding-action-right: 0;
+
+  --modal-padding-content-top: 0;
+  --modal-padding-content-bottom: 0;
+  --modal-padding-content-left: 0;
+  --modal-padding-content-right: 0;
+
+  --modal-padding-header-top: 0;
+  --modal-padding-header-bottom: 0;
+  --modal-padding-header-left: 0;
+  --modal-padding-header-right: 0;
+
+  --modal-gap-modal: var(--space-3xl);
+  --modal-gap-content: var(--space-l);
+  --modal-gap-action: var(--space-l);
+}

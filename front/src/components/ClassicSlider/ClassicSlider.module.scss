@@ -1,0 +1,180 @@
+$thumbSize: 20px;
+$borderWidth: 2px;
+$lineWidth: 12px;
+$lineBorderRadius: 8px;
+$isEditTop: -4px;
+
+.classicSlider {
+  align-items: center;
+  justify-content: center;
+
+  display: flex;
+
+  cursor: pointer;
+
+  .line {
+    justify-content: flex-end;
+    position: relative;
+
+    display: flex;
+
+    overflow: hidden;
+
+    border-radius: $lineBorderRadius;
+
+    background-color: var(--bg-main-quaternary);
+
+    // В случае isEdit overflow hidden отменяется
+    &.lineIsEdit {
+      overflow: visible;
+    }
+  }
+
+  .lineSlider {
+    position: absolute;
+
+    border-radius: 0 0 $lineBorderRadius $lineBorderRadius;
+
+    transition: width 0.3s, height 0.3s;
+
+    background-color: var(--lineSlider-color);
+
+    &.isDragging {
+      transition: width 0s, height 0s;
+    }
+  }
+
+  .point {
+    position: absolute;
+
+    width: $lineWidth;
+    height: $lineWidth;
+    border-radius: $lineBorderRadius;
+    box-sizing: border-box;
+
+    transition: bottom 0.3s, left 0.3s;
+
+    background-color: var(--lineSlider-color);
+
+    &.isDragging {
+      transition: bottom 0s, left 0s;
+    }
+  }
+
+  &.horizontal {
+    flex-direction: row-reverse;
+
+    width: 100%;
+    height: $lineWidth;
+
+    .line {
+      width: 100%;
+      height: $lineWidth;
+    }
+
+    .lineSlider {
+      left: 0;
+
+      width: calc((100% - 12px) * var(--value-percent));
+      height: $lineWidth;
+      border-radius: $lineBorderRadius 0 0 $lineBorderRadius;
+
+      &.isEdit {
+        width: calc((100% - $thumbSize) * var(--value-percent) + $thumbSize / 2);
+      }
+    }
+
+    .point {
+      left: calc((100% - 12px) * var(--value-percent));
+
+      border-radius: 0 $lineBorderRadius $lineBorderRadius 0;
+      box-sizing: border-box;
+
+      &.isEdit {
+        top: $isEditTop;
+        left: calc((100% - $thumbSize - 4px) * var(--value-percent));
+
+        width: $thumbSize;
+        height: $thumbSize;
+        border: $borderWidth solid var(--lineSlider-color);
+        border-radius: 50%;
+
+        background: var(--bg-main-quaternary);
+      }
+    }
+  }
+
+  &.vertical {
+    flex-direction: column;
+
+    width: $lineWidth;
+    height: 100%;
+
+    .line {
+      width: $lineWidth;
+      height: 100%;
+    }
+
+    .lineSlider {
+      bottom: 0;
+
+      width: $lineWidth;
+      height: calc((100% - 12px) * var(--value-percent));
+
+      &.isEdit {
+        height: calc((100% - $thumbSize) * var(--value-percent) + ($thumbSize / 2));
+
+        &.disabled {
+          background: var(--schema-bg-disable-default);
+        }
+      }
+    }
+
+    .point {
+      bottom: calc((100% - 12px) * var(--value-percent));
+
+      border-radius: $lineBorderRadius $lineBorderRadius 0 0;
+      box-sizing: border-box;
+
+      &.isEdit {
+        bottom: calc((100% - $thumbSize) * var(--value-percent));
+        left: $isEditTop;
+
+        width: $thumbSize;
+        height: $thumbSize;
+        border-radius: 50%;
+        border: $borderWidth solid var(--lineSlider-color);
+
+        background: var(--bg-main-quaternary);
+
+        &.disabled {
+          border: $borderWidth solid var(--schema-bg-disable-default);
+        }
+      }
+    }
+  }
+
+  .hoverLine {
+    background-color: var(--bg-scheme-color-hover);
+
+    .lineSlider {
+      background-color: var(--lineSlider-color-hover);
+    }
+
+    .point {
+      background-color: var(--lineSlider-color-hover);
+    }
+  }
+
+  .activeLine {
+    background-color: var(--bg-scheme-color-active);
+
+    .lineSlider {
+      background-color: var(--lineSlider-color-active);
+    }
+
+    .point {
+      background-color: var(--lineSlider-color-active);
+    }
+  }
+}

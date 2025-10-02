@@ -1,0 +1,51 @@
+$chips-height: var(--space-5xl);
+
+.chips {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  cursor: pointer;
+
+  padding: 0 var(--space-xl);
+  height: $chips-height;
+  gap: var(--space-s);
+
+  border-radius: calc(var(--space-5xl) / 2);
+  border: 1px solid var(--control-ghost-border-border);
+  background-color: var(--control-ghost-bg-bg);
+
+  &:hover {
+    background: var(--control-ghost-bg-bg-hover);
+    color: var(--control-ghost-typo-typo-hover);
+
+    .text {
+      color: var(--control-ghost-typo-typo-hover);
+    }
+  }
+}
+
+.warning {
+  background: var(--typo-status-warning);
+}
+
+.alert {
+  background: var(--bg-status-alert);
+}
+
+.selected {
+  background: var(--control-ghost-bg-bg-select);
+  color: var(--control-ghost-typo-typo-select);
+
+  .text {
+    color: var(--control-ghost-typo-typo-select);
+  }
+
+  &:hover {
+    background: var(--control-ghost-bg-bg-select);
+
+    .text {
+      color: var(--control-ghost-typo-typo-select);
+    }
+  }
+}

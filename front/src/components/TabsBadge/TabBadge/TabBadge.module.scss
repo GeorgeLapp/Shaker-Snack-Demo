@@ -1,0 +1,120 @@
+$TabBadge-height--sizeM: 40px;
+$TabBadge-height--sizeS: 32px;
+$TabBadge-height--sizeXS: 24px;
+$labelTop: -10px;
+$labelRight: -5px;
+
+.TabBadgeWithLabel {
+  position: relative;
+
+  .TabBadge {
+    box-sizing: border-box;
+    cursor: pointer;
+
+    &.disabled {
+      border: 1px solid var(--control-disable-bg-bg);
+      background: var(--control-disable-bg-bg);
+      cursor: auto;
+      color: var(--control-disable-typo-typo);
+
+      .text {
+        color: var(--control-disable-typo-typo);
+      }
+
+      .valueText{
+        color: var(--control-disable-typo-typo);
+      }
+
+      .highlightedText {
+        color: var(--typo-link-link);
+      }
+    }
+
+    &.isSelect {
+      border: 1px solid var(--control-ghost-bg-bg-select);
+      background: var(--control-ghost-bg-bg-select);
+      color: var(--control-ghost-typo-typo-select);
+
+      .text {
+        color: var(--control-ghost-typo-typo-select);
+      }
+
+      .valueText{
+        color: var(--typo-main-secondary);
+      }
+
+      .highlightedText {
+        color: var(--typo-link-link);
+      }
+    }
+
+    &.default {
+      border: 1px solid var(--control-ghost-border-border);
+      background: var(--control-ghost-bg-bg);
+      color: var(--control-ghost-typo-typo);
+
+      .text {
+        color: var(--control-ghost-typo-typo);
+      }
+
+      .valueText{
+        color: var(--typo-main-secondary);
+      }
+
+      .highlightedText {
+        color: var(--typo-link-link);
+      }
+
+      &:hover {
+        border: 1px solid var(--control-ghost-border-border-hover);
+        background: var(--control-ghost-bg-bg-hover);
+        color: var(--control-ghost-typo-typo-hover);
+
+        .text {
+          color: var(--control-ghost-typo-typo-hover);
+        }
+
+        .valueText{
+          color: var(--typo-main-secondary);
+        }
+
+        .highlightedText {
+          color: var(--typo-link-link);
+        }
+      }
+    }
+
+    &.Size {
+      &_m {
+        height: $TabBadge-height--sizeM;
+        padding: 0 calc(var(--space-m) - 1px) 0 var(--space-m);
+        border-radius: var(--control-radius-m);
+      }
+
+      &_s {
+        height: $TabBadge-height--sizeS;
+        padding: 0 calc(var(--space-s) - 1px) 0 var(--space-s);
+        border-radius: var(--control-radius-s);
+      }
+
+      &_xs {
+        height: $TabBadge-height--sizeXS;
+        padding: 0 var(--space-xs);
+        border-radius: var(--control-radius-xs);
+      }
+    }
+  }
+
+  .label {
+    position: absolute;
+    right: $labelRight;
+    top: $labelTop;
+  }
+}
+
+.Modal {
+  padding: var(--space-s);
+  border-radius: var(--control-radius-m);
+  background: var(--bg-main-secondary);
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.08), 0 2px 12px 0 rgba(0, 0, 0, 0.32);
+}

@@ -1,0 +1,29 @@
+$list-top: 100px;
+$list-right: 20px;
+$list-gap: 20px;
+
+.notification {
+  display: flex;
+
+  width: 300px;
+
+  justify-content: space-between;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+
+  justify-content: space-between;
+}
+
+.list {
+  position: absolute;
+  top: $list-top;
+  right: $list-right;
+  z-index: 3;
+
+  display: flex;
+  flex-direction: column;
+  gap: $list-gap;
+}

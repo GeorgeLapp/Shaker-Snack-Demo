@@ -1,0 +1,67 @@
+$padding: 5px;
+
+.tableContainer {
+  background-color: #997F2E;
+
+  padding: $padding;
+}
+
+.gridContainerClassName {
+  background-color: #02E2FF;
+
+  gap: $padding;
+
+  padding: $padding;
+}
+
+.baseTableSettingsBarClassName {
+  padding: calc($padding * 2);
+
+  background-color: #0D7580;
+}
+
+.baseTableSettingsBarActionsClassName {
+  background-color: #0FAE79;
+
+  gap: $padding;
+
+  padding: $padding;
+}
+
+.baseTableSettingsBarPaginationClassName {
+  padding: $padding;
+
+  background-color: #2A1F1F;
+}
+
+.baseTableHeaderClassName {
+  background-color: #0AA5FF;
+
+  padding: calc($padding * 2);
+}
+
+.tableDataClassName {
+  background-color: #973A39;
+
+  padding: $padding;
+}
+
+.rowClassName {
+  background-color: #61001D;
+
+  padding: $padding;
+}
+
+// передаётся в column
+.baseTableHeaderColumnClassName {
+  background-color: #B4D50B;
+
+  padding: $padding;
+}
+
+// передаётся в column
+.baseTableDataRowCellClassName {
+  background-color: #B92EFF;
+
+  padding: $padding;
+}

@@ -1,0 +1,47 @@
+$barItem-height: 92px;
+$barItem-minWidth: 40px;
+$dashedLine-height: 70px;
+$statusBar-height: 40px;
+
+.SegmentedBar {
+
+  .barItem {
+    position: relative;
+    flex-direction: column;
+
+    display: flex;
+
+    min-width: $barItem-minWidth;
+    height: $barItem-height;
+
+    .dashedLine {
+      border-left: 1px dashed var(--bg-border-primary);
+      height: $dashedLine-height;
+    }
+
+    .statusBar {
+      position: absolute;
+      bottom: 0;
+
+      border-radius: var(--control-radius-round-xs);
+      height: $statusBar-height;
+      width: 100%;
+
+      &.success {
+        background-color: var(--schema-bg-success-default);
+      }
+
+      &.warning {
+        background-color: var(--schema-bg-warning-default);
+      }
+
+      &.error {
+        background-color: var(--schema-bg-alert-default);
+      }
+
+      &.system {
+        background-color: var(--bg-status-system);
+      }
+    }
+  }
+}

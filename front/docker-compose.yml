@@ -1,0 +1,14 @@
+services:
+  frontend:
+    build:
+      context: .
+    container_name: frontend
+    restart: on-failure
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env
+    environment:
+      - VITE_APP_URL_FRONT=${VITE_APP_URL_FRONT}
+      - VITE_APP_URL_AUTH=${VITE_APP_URL_AUTH}
+      - VITE_APP_BASE_URL=${VITE_APP_BASE_URL}

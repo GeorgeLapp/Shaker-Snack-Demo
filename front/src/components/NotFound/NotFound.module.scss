@@ -1,0 +1,18 @@
+$ellipseSize: 48px;
+
+.ellipse {
+  align-items: center;
+  justify-content: center;
+
+  display: flex;
+
+  border-radius: 50%;
+  width: $ellipseSize;
+  height: $ellipseSize;
+
+  background-color: var(--bg-main-secondary);
+
+  .iconSearch {
+    color: var(--typo-main-primary);
+  }
+}

@@ -1,0 +1,26 @@
+.infoItem {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  border-bottom: 1px dotted var(--bg-border-primary);
+  align-items: flex-end;
+
+  gap: var(--space-xs);
+
+  .descriptionAction {
+    display: flex;
+  }
+
+  .description {
+    overflow: hidden;
+    max-height: 24px;
+  }
+
+  .openDescription {
+    max-height: 1000px;
+  }
+
+  .openDescriptionText {
+    cursor: pointer;
+  }
+}

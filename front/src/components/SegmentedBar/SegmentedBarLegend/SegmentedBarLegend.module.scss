@@ -1,0 +1,26 @@
+$ellipseSize: 12px;
+
+.SegmentedBarLegend {
+
+  .ellipse {
+    border-radius: 100%;
+    width: $ellipseSize;
+    height: $ellipseSize;
+
+    &.success {
+      background-color: var(--schema-bg-success-default);
+    }
+
+    &.warning {
+      background-color: var(--schema-bg-warning-default);
+    }
+
+    &.error {
+      background-color: var(--schema-bg-alert-default);
+    }
+
+    &.system {
+      background-color: var(--bg-status-system);
+    }
+  }
+}

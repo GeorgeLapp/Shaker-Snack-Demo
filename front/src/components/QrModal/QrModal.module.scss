@@ -1,0 +1,59 @@
+$QrModal-card--width: 434px;
+$QrModal-card--height: 544px;
+
+$errorLogo-width: 304px;
+$errorLogo-height: 304px;
+
+.QrModal {
+
+  .errorLogo {
+    width: $errorLogo-width;
+    height: $errorLogo-height;
+  }
+
+  .card {
+    width: $QrModal-card--width;
+    padding: var(--space-3xl) var(--space-l);
+
+    border-radius: var(--control-radius-round-m);
+    background: var(--bg-main-tertriary);
+
+    .qrContainer {
+      border-radius: 12px;
+      overflow: hidden;
+
+      height: 257px;
+    }
+
+    .description {
+
+    }
+  }
+}
+
+.isPrint {
+
+  .card {
+    width: 100%;
+    padding: 0;
+
+    border-radius: 0;
+    background: none;
+
+    justify-content: start;
+    align-items: start;
+
+    .qrContainer {
+      border-radius: 0;
+    }
+  }
+}
+
+.mobileCard {
+  width: auto;
+  box-sizing: border-box;
+  border-radius: var(--control-radius-round-m);
+  padding: var(--space-l);
+
+  background: var(--bg-main-tertriary);
+}

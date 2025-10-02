@@ -1,0 +1,12 @@
+$noContent-height: 200px;
+
+.noContent {
+  display: flex;
+  height: $noContent-height;
+  width: 100%;
+
+  .icon {
+    height: $noContent-height;
+    width: 100%;
+  }
+}

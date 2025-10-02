@@ -1,0 +1,10 @@
+.BaseTableFilterButton {
+  justify-content: center;
+  align-items: center;
+
+  display: flex;
+
+  box-sizing: border-box;
+  width: var(--control-height-xs);
+  height: var(--control-height-xs);
+}

@@ -1,0 +1,13 @@
+.AlertButton {
+  border-color: var(--control-primary-bg-bg-alert);
+
+  background-color: var(--control-primary-bg-bg-alert);
+  color: var(--control-primary-typo-typo-alert);
+
+  &:hover {
+    border-color: var(--control-primary-bg-bg-alert-hover) !important;
+
+    background-color: var(--control-primary-bg-bg-alert-hover) !important;
+    color: var(--control-primary-typo-typo-alert-hover) !important;
+  }
+}

@@ -1,0 +1,9 @@
+.BaseTable {
+  flex-direction: column;
+
+  display: flex;
+
+  &.isLoading {
+    height: 100%;
+  }
+}

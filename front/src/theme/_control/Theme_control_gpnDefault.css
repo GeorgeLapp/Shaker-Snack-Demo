@@ -1,0 +1,39 @@
+.Theme_control_gpnDefault {
+  /* TODO: перетрясти тут все константы, сверится с фигмой */
+  --card-radius: 24px;
+  /* TODO: изменил, проверить тут проблему */
+  /* TODO: тут однозначно есть проблемы все textField стали round */
+  /*--control-radius-l: 24px;*/
+  /*--control-radius-m: 20px;*/
+  /*--control-radius-s: 16px;*/
+  /*--control-radius-xs: 12px;*/
+
+  --control-radius: 4px;
+  --control-radius-l: 12px;
+  --control-radius-m: 10px;
+  --control-radius-s: 8px;
+  --control-radius-xs: 6px;
+
+  /* TODO: не соответсвие данным из consta */
+  --control-radius-round-xs: 12px;
+  --control-radius-round-s: 16px;
+  --control-radius-round-m: 20px;
+  --control-radius-round-l: 24px;
+
+  --control-border-width: 1px;
+  --control-height-l: var(--space-6xl);
+  --control-height-m: var(--space-5xl);
+  --control-height-s: var(--space-3xl);
+  --control-height-xs: var(--space-xl);
+  --control-box-size-l: var(--space-l);
+  --control-box-size-m: var(--space-m);
+  --control-box-size-s: var(--space-s);
+  --control-space-l: var(--space-xl);
+  --control-space-m: var(--space-l);
+  --control-space-s: var(--space-m);
+  --control-space-xs: var(--space-s);
+  --control-text-size-l: var(--size-text-l);
+  --control-text-size-m: var(--size-text-m);
+  --control-text-size-s: var(--size-text-s);
+  --control-text-size-xs: var(--size-text-xs);
+}

@@ -1,0 +1,102 @@
+.HorizontalContainer {
+  display: flex;
+  flex-direction: row;
+  box-sizing: border-box;
+}
+
+.align {
+  &_stretch {
+    align-items: stretch;
+  }
+
+  &_center {
+    align-items: center;
+  }
+
+  &_start {
+    align-items: flex-start;
+  }
+
+  &_end {
+    align-items: flex-end;
+  }
+}
+
+.justify{
+  &_stretch {
+    justify-content: stretch;
+  }
+
+  &_center {
+    justify-content: center;
+  }
+
+  &_start {
+    justify-content: flex-start;
+  }
+
+  &_end {
+    justify-content: flex-end;
+  }
+}
+
+.gap {
+  &_0 {
+    gap: 0;
+  }
+
+  &_auto {
+    gap: var(--space-l);
+    justify-content: space-between;
+    flex: 1;
+    width: 100%;
+  }
+
+  &_3xs {
+    gap: var(--space-3xs);
+  }
+
+  &_2xs {
+    gap: var(--space-2xs);
+  }
+
+  &_xs {
+    gap: var(--space-xs);
+  }
+
+  &_s {
+    gap: var(--space-s);
+  }
+
+  &_m {
+    gap: var(--space-m);
+  }
+
+  &_l {
+    gap: var(--space-l);
+  }
+
+  &_xl {
+    gap: var(--space-xl);
+  }
+
+  &_2xl {
+    gap: var(--space-2xl);
+  }
+
+  &_3xl {
+    gap: var(--space-3xl);
+  }
+
+  &_4xl {
+    gap: var(--space-4xl);
+  }
+
+  &_5xl {
+    gap: var(--space-5xl);
+  }
+
+  &_6xl {
+    gap: var(--space-6xl);
+  }
+}

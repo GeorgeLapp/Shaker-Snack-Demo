@@ -4,16 +4,15 @@ import checker from 'vite-plugin-checker';
 
 export default defineConfig({
   base: '/',
-  plugins: [
-    react(),
-    checker({ typescript: true })
-  ],
-  server: {\n    host: '0.0.0.0',\n    port: 3050,\n    strictPort: false,\n  },
+  plugins: [react(), checker({ typescript: true })],
+  server: {
+    host: '0.0.0.0',
+    port: 3050,
+    strictPort: false,
+  },
   resolve: {
     alias: {
       '@': '/src',
     },
   },
 });
-
-

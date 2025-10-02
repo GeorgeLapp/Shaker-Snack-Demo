@@ -8,14 +8,12 @@ export default defineConfig({
     react(),
     checker({ typescript: true })
   ],
-  server: {
-    port: 3000,
-    strictPort: false,
-  },
+  server: {\n    host: '0.0.0.0',\n    port: 3050,\n    strictPort: false,\n  },
   resolve: {
     alias: {
       '@': '/src',
     },
   },
 });
+
 

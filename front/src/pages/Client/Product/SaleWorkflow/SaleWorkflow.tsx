@@ -1,4 +1,5 @@
 import { FC, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SaleWorkflowProps } from './types';
 import { Modal } from '@consta/uikit/Modal';
 import styles from './SaleWorkflow.module.scss';
@@ -26,6 +27,7 @@ const ERROR_DISPENSE_DESCRIPTION =
 const SaleWorkflow: FC<SaleWorkflowProps> = ({ cell, onClose }) => {
   const dispatch = useAppDispatch();
   const workflowSaleStatus = useAppSelector(selectSaleWorkflowStatus());
+  const navigate = useNavigate();
 
   useEffect(() => {
     dispatch(startSaleWorkflow(cell));
@@ -38,6 +40,10 @@ const SaleWorkflow: FC<SaleWorkflowProps> = ({ cell, onClose }) => {
   const handleClose = () => {
     dispatch(cancelSaleWorkflow());
     onClose();
+
+    if (workflowSaleStatus === SaleWorkflowStatus.Dispensed) {
+      navigate('/');
+    }
   };
 
   const retryPayment = () => {
@@ -184,3 +190,4 @@ const SaleWorkflow: FC<SaleWorkflowProps> = ({ cell, onClose }) => {
 };
 
 export default SaleWorkflow;
+

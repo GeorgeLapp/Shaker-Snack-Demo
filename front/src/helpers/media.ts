@@ -1,6 +1,6 @@
 const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
 
-const SNACK_API_BASE_URL = (import.meta.env.VITE_APP_SNACK_API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
+const SNACK_API_BASE_URL = (import.meta.env.VITE_APP_SNACK_API_URL ?? 'http://147.78.67.179:4000').replace(/\/+$/, '');
 const RAW_MEDIA_PREFIX = import.meta.env.VITE_APP_SNACK_MEDIA_PREFIX ?? '/media';
 
 const isMediaPrefixAbsolute = ABSOLUTE_URL_PATTERN.test(RAW_MEDIA_PREFIX);

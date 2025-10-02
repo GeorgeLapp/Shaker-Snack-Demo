@@ -54,7 +54,7 @@
     "yup": "^1.2.0"
   },
   "scripts": {
-    "start": "vite",
+    "start": "vite --port 3050",
     "build": "tsc && vite build",
     "serve": "vite preview"
   },
@@ -84,3 +84,4 @@
     "vite-plugin-checker": "^0.8.0"
   }
 }
+

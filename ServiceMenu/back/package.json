@@ -1,0 +1,25 @@
+{
+  "name": "fsm-service-menu",
+  "version": "1.0.0",
+  "description": "FSM сервисного меню: ES-модуль и юнит-тесты на Vitest",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^1.6.0",
+    "supertest": "^7.1.4",
+    "vitest": "^1.6.1"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "morgan": "^1.10.1"
+  }
+}

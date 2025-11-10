@@ -1,0 +1,365 @@
+{
+	"type": "cellStoreExportSnack",
+	"body": [
+		{
+			"cellNumber": 1,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 1,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 2,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 3,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 4,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 5,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 6,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 7,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 8,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 9,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 10,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 11,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 12,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 13,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 14,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 15,
+			"price": 50,
+			"goodId": "22",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 16,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 17,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 18,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 19,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 20,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 21,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 22,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 23,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 24,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 25,
+			"price": 50,
+			"goodId": "23",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 26,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 27,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 28,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 29,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 30,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 31,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 32,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 33,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 34,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 35,
+			"price": 50,
+			"goodId": "24",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 36,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 37,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 38,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 39,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 40,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 41,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 42,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 43,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 44,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		},
+		{
+			"cellNumber": 45,
+			"price": 50,
+			"goodId": "25",
+			"size": 3,
+			"volume": 7,
+			"maxVolume": 10
+		}
+	]
+}

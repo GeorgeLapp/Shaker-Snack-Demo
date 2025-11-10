@@ -1,0 +1,14 @@
+{
+  "type": "module",
+  "scripts": {
+    "test": "cross-env NODE_ENV=test vitest run",
+    "test:ui": "cross-env NODE_ENV=test vitest",
+    "coverage": "cross-env NODE_ENV=test vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.4",
+    "cross-env": "^10.1.0",
+    "supertest": "^7.1.4",
+    "vitest": "^4.0.4"
+  }
+}

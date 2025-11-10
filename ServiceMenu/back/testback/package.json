@@ -1,0 +1,13 @@
+{
+  "type": "module",
+  "name": "test-backend-fsm",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node test-backend.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}

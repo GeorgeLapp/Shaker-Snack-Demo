@@ -9,7 +9,7 @@ import path from 'path';
 import process from 'process';
 import WebSocket from 'ws'; // чтобы была установлена зависимость для sendCellStoreFromSqlite.js
 import { v4 as uuidv4 } from 'uuid'; // зависимость для sendCellStoreFromSqlite.js
-import { sendCellStoreFromSqlite } from './sendCellStoreFromSqlite.mjs';
+import { sendCellStoreFromSqlite,sendCellStoreForCells } from './sendCellStoreFromSqlite.mjs';
 
 // === ENDPOINTS из вашей спецификации авторизации ===
 // см. "Авторизация и установление соединения ws.docx"
@@ -62,7 +62,7 @@ async function main() {
   const accessToken = await fetchToken();
 
   // 2) Отправляем наполнение (read+send)
-  const body = await sendCellStoreFromSqlite({
+ const body = await sendCellStoreFromSqlite({
     dbPath,
     wsUrl: WS_URL,
     accessToken,
@@ -77,6 +77,15 @@ async function main() {
       }
     },
   });
+/*const body  =await sendCellStoreForCells({
+  dbPath,
+  wsUrl: WS_URL,
+  accessToken,
+  clientId:CLIENT_ID,
+  machineId: MACHINE_ID,
+  cellNumbers: [12, 23],
+  onMessage: (m) => console.log('[WS] ←', JSON.stringify(m))
+});*/
 
   // 3) Печатаем результат snackTopicRes.body
   // Структура ответа описана в спецификации cellStoreImportTopicSnack/snackTopicRes.

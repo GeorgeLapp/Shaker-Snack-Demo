@@ -93,7 +93,7 @@ export async function recordPayment(dbPath, payload) {
     goodId = null,
     price,
     method
-  } = payload;.l
+  } = payload;
 
   if (!cellNumber || !price || !method) {
     throw new Error('cellNumber, price, method are required');

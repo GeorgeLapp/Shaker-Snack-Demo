@@ -141,12 +141,12 @@ END;
 
 -- (Опционально) Защитный триггер: запретить проведение продажи, если volume < qty
 -- Закомментировано по «минимальному» требованию; раскомментируйте при необходимости «жёсткой» инвариантности.
--- CREATE TRIGGER IF NOT EXISTS trg_sale_guard_volume
--- BEFORE INSERT ON matrix_sale_log
--- WHEN (SELECT volume FROM matrix_cell_state WHERE cell_number = NEW.cell_number) < NEW.qty
--- BEGIN
---   SELECT RAISE(ABORT, 'Insufficient volume for sale');
--- END;
+CREATE TRIGGER IF NOT EXISTS trg_sale_guard_volume
+BEFORE INSERT ON matrix_sale_log
+WHEN (SELECT volume FROM matrix_cell_state WHERE cell_number = NEW.cell_number) < NEW.qty
+BEGIN
+  SELECT RAISE(ABORT, 'Insufficient volume for sale');
+END;
 
 -- =========================
 -- 4) Представления

@@ -3,8 +3,7 @@
 // Требует рядом файл telemetry-payments.mjs
 // Зависимости: "ws", "sqlite3" (для самого telemetry-payments.mjs)
 
-import { recordPayment } from './telemetry-payments.mjs';
-import { syncWithTelemetry } from './telemetry-payments.mjs';
+import { recordPayment, syncWithTelemetry } from './telemetry-payments.mjs';
 
 // ---- Конфигурация из переменных окружения ----
 // Обязательно задайте следующие переменные (или отредактируйте значения по умолчанию ниже):
@@ -55,12 +54,19 @@ async function fetchToken() {
 
 // ---- Основной поток ----
 async function main() {
-  recordPayment(dbPath,);
+   const res = await recordPayment(dbPath, {
+      cellNumber: 5,   // номер ячейки автомата
+      qty: 1,          // количество (по умолчанию 1)
+      goodId: 101,     // id товара из каталога (можно null)
+      price: 150.5,    // цена в рублях (тип REAL в БД)
+      method: 'cash'   // способ оплаты: 'cash' | 'card' | 'qr'
+    });
   console.log(`DB file: ${dbPath}`);
   console.log('Getting OAuth token…');
   const token = await fetchToken();
 
   console.log('Syncing pending transactions over WebSocket…');
+    
   const result = await syncWithTelemetry(dbPath, {
     oauthToken: token,
     wsUrl: WS_URL,

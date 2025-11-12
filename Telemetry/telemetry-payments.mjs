@@ -81,7 +81,7 @@ export async function recordPayment(dbPath, payload = {}) {
   try {
     await ensureSchema(db);
 
-    // достанем price_minor как денорму (если есть)
+    // денорма цены позиции (если есть в БД)
     const priceRow = await db.get(
       `SELECT COALESCE(c.price_minor, p.price_minor) AS price_minor
          FROM matrix_cell_config c
@@ -113,10 +113,12 @@ export async function recordPayment(dbPath, payload = {}) {
 }
 
 /**
- * Сборка ВСЕХ неотправленных транзакций в единый payload для WS.
- * Возвращает { message, uuids }, где:
- *  - message: { clientId, type:'saleImportTopicSnack', body:[...] }
- *  - uuids:   массив saleUuid, соответствующий body (для последующей пометки)
+ * Сборка всех неотправленных транзакций в payload для WS в формате:
+ * {
+ *   clientId: <serialNumber>,
+ *   type: "saleImportTopicSnack",
+ *   body: [ { ... "writeOffs":[{...}], "payments":[{...}], "sale-uuid": "<uuid>" } ]
+ * }
  */
 export async function getPendingSalesPayload(dbPath, {
   serialNumber,
@@ -152,27 +154,39 @@ export async function getPendingSalesPayload(dbPath, {
       return { message: null, uuids: [] };
     }
 
-    const body = rows.map(r => ({
-      machineId,
-      machineModelId,
-      orgId,
-      serialNumber,
-      totalPrice: r.amount,
-      price: r.priceMinor ?? r.amount,     // можно убрать, если не нужен
-      dateSale: new Date(r.ts).toISOString(),
-      volume: r.qty,
-      machineTimezone: timezoneOffsetHours,
-      writeOffs: {
+    const body = rows.map(r => {
+      const oneWriteOff = {
         cellNumber: r.cellNumber,
         productId: r.goodId ?? r.cellNumber
-      },
-      payments: {
+      };
+      const onePayment = {
         price: r.amount,
         method: r.method
-      },
-      saleUuid: r.saleUuid,
-      goodId: r.goodId ?? undefined
-    }));
+      };
+
+      // Собираем объект продажи с требуемой структурой
+      const item = {
+        machineId,
+        machineModelId,
+        orgId,
+        serialNumber,
+        totalPrice: r.amount,
+        price: r.priceMinor ?? r.amount,
+        dateSale: new Date(r.ts).toISOString(),
+        name: undefined, // при желании подставь название
+        volume: r.qty,
+        machineTimezone: timezoneOffsetHours,
+        writeOffs: [ oneWriteOff ],       // <--- массив
+        payments: [ onePayment ],         // <--- массив
+        brandId: undefined,
+        goodId: r.goodId ?? undefined
+      };
+
+      // ВАЖНО: ключ "sale-uuid" с дефисом
+      item['sale-uuid'] = r.saleUuid;
+
+      return item;
+    });
 
     return {
       message: { clientId: serialNumber, type: 'saleImportTopicSnack', body },

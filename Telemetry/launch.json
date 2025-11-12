@@ -1,0 +1,77 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🧩 Debug: sync-catalog",
+      "program": "${workspaceFolder}/Telemetry/sync-catalog.mjs",
+      "cwd": "${workspaceFolder}/Telemetry",
+      "args": ["goods.db"],
+      "runtimeExecutable": "node",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🧩 Debug: sync-matrix",
+      "program": "${workspaceFolder}/Telemetry/sync-matrix.mjs",
+      "cwd": "${workspaceFolder}/Telemetry",
+      "args": ["goods.db"],
+      "runtimeExecutable": "node",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🧩 Debug: sync-volume",
+      "program": "${workspaceFolder}/Telemetry/sync-volume.mjs",
+      "cwd": "${workspaceFolder}/Telemetry",
+      "args": ["goods.db"],
+      "runtimeExecutable": "node",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🧩 Debug: sync-payments",
+      "program": "${workspaceFolder}/Telemetry/sync-payments.mjs",
+      "cwd": "${workspaceFolder}/Telemetry",
+      "args": ["goods.db"],
+      "runtimeExecutable": "node",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🧩 Debug: applyMatrixFromTelemetry",
+      "program": "${workspaceFolder}/Telemetry/applyMatrixFromTelemetry.mjs",
+      "cwd": "${workspaceFolder}/Telemetry",
+      "args": ["goods.db"],
+      "runtimeExecutable": "node",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🧩 Debug: Custom script...",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}/Telemetry",
+      "args": ["goods.db"],
+      "runtimeExecutable": "node",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "🐞 Attach to running Node process",
+      "port": 9229
+    }
+  ]
+}

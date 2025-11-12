@@ -79,9 +79,9 @@ async function main() {
   console.log(`DB file: ${dbPath}`);
 
   await recordPayment(dbPath, {
-  cellNumber: 4,
+  cellNumber: 1,
   qty: 1,
-  goodId: 105,
+  goodId: 22,
   price: 150.0,
   method: 'cash'
 });
@@ -105,6 +105,7 @@ async function main() {
   const token = await fetchToken();
 
   console.log(`Sending ${uuids.length} sale(s) over WebSocket…`);
+  console.log(JSON.stringify(message));
   const ack = await sendOverWs(token, message);
   console.log('Ack:', JSON.stringify(ack));
 

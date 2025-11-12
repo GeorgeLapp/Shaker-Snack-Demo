@@ -42,7 +42,7 @@ const PING_MS = Number(process.env.SHAKER_PING_MS || 15000);
 // -------------------- разбор аргументов --------------------
 const argv = process.argv.slice(2);
 let dbPath = 'goods.db';
-let cellsArg = "1,2,4,5,6,7";
+let cellsArg = null;
 
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];

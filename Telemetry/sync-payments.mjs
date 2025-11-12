@@ -79,7 +79,7 @@ async function main() {
   console.log(`DB file: ${dbPath}`);
 
   await recordPayment(dbPath, {
-  cellNumber: 1,
+  cellNumber: 2,
   qty: 1,
   goodId: 22,
   price: 150.0,

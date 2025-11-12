@@ -1,22 +1,22 @@
 // Node 18+
 // npm i ws
 import WebSocket from 'ws';
-import { randomUUID } from 'crypto';
-import { loadMatrixFromSqlite } from './sendMatrixFromSqlite.mjs';
+import { buildMatrixImportPayload } from './sendMatrixFromSqlite.mjs';
 
-// ---- Конфиг окружения (из файла авторизации) ---- :contentReference[oaicite:9]{index=9}
+// ── конфиг окружения (адреса/креды)
 const TOKEN_URL = process.env.SHAKER_TOKEN_URL
   || 'https://kk.ishaker.ru:4437/realms/machine-realm/protocol/openid-connect/token';
 const WS_URL = process.env.SHAKER_WS_URL
   || 'ws://185.46.8.39:8315/ws';
+
 const CLIENT_ID = process.env.SHAKER_CLIENT_ID || 'snack_02';
 const CLIENT_SECRET = process.env.SHAKER_CLIENT_SECRET || 'GJTymndg8RCVZ7l52eMUjQUmmYgbeHE7';
 const MACHINE_ID = process.env.SHAKER_MACHINE_ID || 'MACHINE_ID_001';
 
-// Путь к БД — из аргумента, по умолчанию goods.db
+// БД — только как входной параметр, но обработка в другом файле
 const DB_PATH = process.argv[2] || 'goods.db';
 
-// ---- OAuth2 Client Credentials ---- :contentReference[oaicite:10]{index=10}
+// ── OAuth2 Client Credentials (только авторизация)
 async function fetchToken() {
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
@@ -38,29 +38,18 @@ async function fetchToken() {
   return json.access_token;
 }
 
-// ---- Построение payload по спецификации matrixImportTopicSnack ---- :contentReference[oaicite:11]{index=11}
-function buildMatrixPayload({ clientId, machineId, matrix, requestUuid }) {
-  return {
-    clientId,
-    type: 'matrixImportTopicSnack',
-    body: { requestUuid, machineId, matrix },
-  };
-}
-
 /**
- * Отправка по одному WS и ожидание ДВУХ сообщений:
- *   1) matrixImportTopicSnack (success/err), возможно с body: null
- *   2) snackTopicRes с тем же requestUuid
- *
- * Возвращает { ack1, ack2 }.
+ * Только отправка и ожидание двух ответов на ОДНОМ сокете:
+ *   1) { "type": "matrixImportTopicSnack", "success": true, "message": "", "body": null }
+ *   2) { "type": "snackTopicRes", "body": { "requestUuid": "...", "success": true, "updatedCells": [...], "errors": null } }
  */
-async function sendAndWaitDoubleAck({ wsUrl, token, payload, timeoutMs = 15000 }) {
+async function sendPayloadAndWaitDoubleAck({ wsUrl, token, payload, timeoutMs = 20000 }) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${token}` } });
+
     let timer;
     let ack1 = null;
     let ack2 = null;
-
     const requestUuid = payload?.body?.requestUuid;
 
     const finish = (err) => {
@@ -71,65 +60,52 @@ async function sendAndWaitDoubleAck({ wsUrl, token, payload, timeoutMs = 15000 }
 
     ws.on('open', () => {
       ws.send(JSON.stringify(payload));
-
-      timer = setTimeout(() => {
-        finish(new Error(`Timeout waiting for double-ACK (requestUuid=${requestUuid})`));
-      }, timeoutMs);
+      timer = setTimeout(() => finish(new Error(`Timeout waiting two responses (requestUuid=${requestUuid})`)), timeoutMs);
     });
 
     ws.on('message', (raw) => {
-      let msg;
-      try { msg = JSON.parse(raw.toString()); } catch { return; }
+      let msg; try { msg = JSON.parse(raw.toString()); } catch { return; }
 
-      // 1-й ответ: matrixImportTopicSnack (body может быть null — это норма)
-      if (!ack1 &&
-          msg?.type === 'matrixImportTopicSnack') {
-        ack1 = msg;
-        // не выходим — ждём второй snackTopicRes
-        return;
+      // 1-й ответ
+      if (!ack1 && msg?.type === 'matrixImportTopicSnack') {
+        ack1 = msg;                     // body может быть null — это ОК
+        return;                          // ждём второй
       }
 
-      // 2-й ответ: snackTopicRes с тем же requestUuid
+      // 2-й ответ (коррелируем по requestUuid)
       if (msg?.type === 'snackTopicRes' &&
-          msg?.body?.requestUuid &&
-          msg.body.requestUuid === requestUuid) {
+          msg?.body?.requestUuid === requestUuid) {
         ack2 = msg;
         return finish();
       }
     });
 
     ws.on('error', (err) => finish(err));
-    ws.on('close', () => {
-      // если сокет закрылся раньше времени — пусть таймер добьёт, либо уже finish(err/ok) отработал
-    });
+    ws.on('close', () => { /* ждём таймер или уже завершили */ });
   });
 }
 
-// ---- Основной запуск ----
+// ── основной запуск (только «взять payload у модуля» → авторизоваться → отправить → дождаться 2 ответов)
 (async () => {
   try {
     console.log(`DB file: ${DB_PATH}`);
-    console.log('Loading matrix from SQLite…');
-    const matrix = await loadMatrixFromSqlite(DB_PATH); // только БД-логика (этот модуль вы и просили) 
-    console.log(`Matrix cells: ${matrix.length}`);
-
-    const requestUuid = randomUUID();
-    const payload = buildMatrixPayload({
+    console.log('Building payload from DB (delegated)…');
+    const { payload, requestUuid, matrixCount } = await buildMatrixImportPayload({
+      dbPath: DB_PATH,
       clientId: CLIENT_ID,
-      machineId: MACHINE_ID,
-      matrix,
-      requestUuid,
+      machineId: MACHINE_ID
     });
+    console.log(`Payload ready. cells=${matrixCount}, requestUuid=${requestUuid}`);
 
     console.log('Getting OAuth token…');
-    const token = await fetchToken(); // авторизация здесь, как вы просили. :contentReference[oaicite:13]{index=13}
+    const token = await fetchToken();
 
-    console.log('Sending snapshot over WS and waiting for 2 responses…');
-    const { ack1, ack2 } = await sendAndWaitDoubleAck({
+    console.log('Sending over WS and waiting for 2 responses…');
+    const { ack1, ack2 } = await sendPayloadAndWaitDoubleAck({
       wsUrl: WS_URL,
       token,
       payload,
-      timeoutMs: 20000, // немного запас
+      timeoutMs: 20000
     });
 
     console.log('\n— ACK #1 (matrixImportTopicSnack):');

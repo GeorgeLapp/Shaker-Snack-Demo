@@ -735,7 +735,7 @@ export function createVendingHttpApp({
  * @param {object} options
  * @param {string} options.portPath - путь к UART-порту (COM3, /dev/ttyS0 и т.п.)
  * @param {number} [options.baudRate=9600] - скорость порта
- * @param {number} [options.httpPort=3000] - порт HTTP-сервера
+ * @param {number} [options.httpPort=3001] - порт HTTP-сервера
  * @param {string} [options.basePath='/api/v1'] - базовый путь API
  * @param {(logObj:any) => void} [options.logger] - логгер (по умолчанию console.log)
  * @returns {Promise<{ app: import('express').Express, server: import('http').Server, controller: VendingController }>}
@@ -743,7 +743,7 @@ export function createVendingHttpApp({
 export async function startVendingHttpServer({
   portPath,
   baudRate = 9600,
-  httpPort = 3000,
+  httpPort = 3001,
   basePath = '/api/v1',
   logger = console.log,
 } = {}) {
@@ -785,14 +785,14 @@ export async function startVendingHttpServer({
 
 /**
  * Если файл запущен напрямую командой:
- *   node vending-http-api.mjs /dev/ttyUSB0 3000
+ *   node vending-http-api.mjs /dev/ttyUSB0 3001
  * или:
- *   node vending-http-api.mjs COM3 3000
+ *   node vending-http-api.mjs COM3 3001
  * — автоматически стартуем HTTP-сервер.
  */
 if (import.meta.url === `file://${process.argv[1]}`) {
   const portPath = process.argv[2] || '/dev/ttyUSB0';
-  const httpPort = process.argv[3] ? Number(process.argv[3]) : 3000;
+  const httpPort = process.argv[3] ? Number(process.argv[3]) : 3001;
 
   // Простейший логгер
   const logger = (entry) => {

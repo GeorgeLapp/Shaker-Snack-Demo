@@ -26,7 +26,7 @@ import WebSocket from 'ws';
 import {
   buildCellStoreMessageForAll,
   buildCellStoreMessageForCells
-} from './telemetry-payload.mjs';
+} from '../shaker-db.mjs';
 
 const TOKEN_URL = process.env.SHAKER_TOKEN_URL
   || 'https://kk.ishaker.ru:4437/realms/machine-realm/protocol/openid-connect/token';
@@ -41,7 +41,7 @@ const PING_MS = Number(process.env.SHAKER_PING_MS || 15000);
 
 // -------------------- разбор аргументов --------------------
 const argv = process.argv.slice(2);
-let dbPath = 'goods.db';
+let dbPath = 'c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/goods.db';
 let cellsArg = null;
 
 for (let i = 0; i < argv.length; i++) {

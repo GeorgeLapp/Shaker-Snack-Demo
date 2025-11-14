@@ -1,7 +1,7 @@
 // file: sync-catalog.mjs
 import WebSocket from 'ws';
 import sqlite3 from 'sqlite3';
-import { importCatalog } from './importCatalog.mjs';
+import { importCatalog } from '../shaker-db.mjs';
 
 // ==== Параметры запуска ====
 // 1-й аргумент: имя файла базы (по умолчанию goods.db)

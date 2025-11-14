@@ -1,7 +1,7 @@
 // Требуется: npm i ws
 import WebSocket from 'ws';
 import { randomUUID } from 'crypto';
-import { getCellVolumes } from './sendCellVolumesFromSqlite.mjs';
+import { getCellVolumes } from '../shaker-db.mjs';
 
 // ==== Конфигурация окружения (переопределяем через переменные среды) ====
 
@@ -180,7 +180,7 @@ async function sendVolumesOverWs(
 // - goods.db — путь к базе (по умолчанию goods.db)
 // - 1 2 3   — номера ячеек для отправки (если не указаны — отправляются все enabled)
 
-const dbPath = process.argv[2] || 'goods.db';
+const dbPath = process.argv[2] || 'c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/goods.db';
 const cellsFromArgs = process.argv
   .slice(3)
   .map((n) => parseInt(n, 10))

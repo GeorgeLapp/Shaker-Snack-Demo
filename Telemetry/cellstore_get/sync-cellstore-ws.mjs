@@ -4,10 +4,10 @@ import { setTimeout as delay } from 'timers/promises';
 import WebSocket from 'ws';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { applyMatrixFromTelemetry } = require('./applyMatrixFromTelemetry.js');
+import { applyMatrixFromTelemetry } from '../shaker-db.mjs';
 
 // ====== Конфигурация ======
-const DB_PATH        = process.argv[2] || 'goods.db';
+const DB_PATH        = process.argv[2] || 'c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/goods.db';
 
 // OAuth2 client_credentials
 const AUTH_URL       = process.env.TELEMETRY_AUTH_URL || 'https://kk.ishaker.ru:4437/realms/machine-realm/protocol/openid-connect/token';

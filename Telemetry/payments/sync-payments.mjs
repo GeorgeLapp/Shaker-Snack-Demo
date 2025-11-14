@@ -2,7 +2,7 @@
 // Запуск: node sync-payments.mjs [dbPath]
 // npm i ws
 import WebSocket from 'ws';
-import { getPendingSalesPayload, markSent, recordPayment } from './telemetry-payments.mjs';
+import { getPendingSalesPayload, markSent, recordPayment } from '../shaker-db.mjs';
 
 // ---- Конфигурация из env ----
 const CLIENT_ID  = process.env.SHAKER_CLIENT_ID  || 'snack_02'; // == serialNumber
@@ -17,7 +17,7 @@ const MODEL_ID   = process.env.SHAKER_MACHINE_MODEL_ID ? Number(process.env.SHAK
 const TZ_HOURS   = process.env.SHAKER_TZ_HOURS ? Number(process.env.SHAKER_TZ_HOURS) : 3;
 
 // ---- CLI ----
-const dbPath = process.argv[2] || 'goods.db';
+const dbPath = process.argv[2] || 'c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/goods.db';
 
 // ---- OAuth2 CC ----
 async function fetchToken() {
@@ -79,7 +79,7 @@ async function main() {
   console.log(`DB file: ${dbPath}`);
 
   await recordPayment(dbPath, {
-  cellNumber: 2,
+  cellNumber: 3,
   qty: 1,
   goodId: 22,
   price: 150.0,

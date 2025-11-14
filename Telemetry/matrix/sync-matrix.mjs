@@ -1,7 +1,7 @@
 // Node 18+
 // npm i ws
 import WebSocket from 'ws';
-import { buildMatrixImportPayload } from './sendMatrixFromSqlite.mjs';
+import { buildMatrixImportPayload } from '../shaker-db.mjs';
 
 // ── конфиг окружения (адреса/креды)
 const TOKEN_URL = process.env.SHAKER_TOKEN_URL
@@ -14,7 +14,7 @@ const CLIENT_SECRET = process.env.SHAKER_CLIENT_SECRET || 'GJTymndg8RCVZ7l52eMUj
 const MACHINE_ID = process.env.SHAKER_MACHINE_ID || 'MACHINE_ID_001';
 
 // БД — только как входной параметр, но обработка в другом файле
-const DB_PATH = process.argv[2] || 'goods.db';
+const DB_PATH = process.argv[2] || 'c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/goods.db';
 
 // ── OAuth2 Client Credentials (только авторизация)
 async function fetchToken() {

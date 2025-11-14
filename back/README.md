@@ -16,6 +16,9 @@ Environment variables:
 - `PRODUCTS_DB_PATH` - optional absolute or relative path to the SQLite database with product details. Defaults to `../DB/products_db.db` relative to the project root.
 - `STATIC_MEDIA_ROOT` - optional absolute or relative path to the directory with media assets. Defaults to `../SnackMedia` relative to the project root.
 - `STATIC_ROUTE_PREFIX` - public URL prefix used to expose static assets. Defaults to `/media`.
+- `VENDING_CONTROLLER_API_URL` - base URL of the hardware controller HTTP API (for example `http://127.0.0.1:3000/api/v1`). Defaults to that local URL.
+- `VENDING_CONTROLLER_REQUEST_TIMEOUT_MS` - optional timeout in milliseconds for HTTP calls to the controller API. Defaults to `10000`.
+- `VENDING_CONTROLLER_VEND_TIMEOUT_MS` - optional timeout in milliseconds passed as `timeoutMs` when invoking `/vend/simple` on the controller. The controller default is used when omitted.
 
 ## Data source
 
@@ -29,9 +32,13 @@ Image files for the vending machine live in the `SnackMedia` directory. They are
 
 - `GET /api/product-matrix` - returns the full product matrix.
 - `POST /api/start-sale` - accepts `{ "cellNumber": number }` and returns `{ "success": true }`.
-- `POST /api/issue-product` - accepts `{ "cellNumber": number }` and returns `{ "success": true }`.
+- `POST /api/issue-product` - accepts `{ "cellNumber": number }`, triggers a `/vend/simple` request against the controller API, and mirrors its success response.
 
 Each handler logs the call metadata alongside the incoming payload for observability.
+
+## Vending controller integration
+
+The `/api/issue-product` endpoint acts as a proxy to the HTTP server located in `Controller/vending-http-api.mjs`. Run that service separately (for example on `http://127.0.0.1:3000/api/v1`) and point `VENDING_CONTROLLER_API_URL` to it. When the purchase workflow in the front-end reaches the dispense stage it calls `/api/issue-product`, which now relays the request to `/vend/simple` and surfaces hardware faults to the UI.
 
 ## Running locally
 

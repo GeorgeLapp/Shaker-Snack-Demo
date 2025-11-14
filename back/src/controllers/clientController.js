@@ -1,8 +1,8 @@
 const { fetchProductMatrix, findProductByCellNumber } = require('../services/productService');
 const { logEvent } = require('../logger');
+const { vendProduct } = require('../services/vendingControllerClient');
 
 const PAYMENT_DELAY_MS = 5000;
-const DISPENSE_DELAY_MS = 7000;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -64,18 +64,30 @@ const issueProduct = async (payload) => {
 
   const product = validatePayload(payload);
 
-  await delay(DISPENSE_DELAY_MS);
+  try {
+    const controllerResponse = await vendProduct({ channel: product.cellNumber });
 
-  if (product.cellNumber === 2) {
-    const error = new Error('Выдача товара не удалась. Обратитесь к обслуживанию автомата.');
-    error.statusCode = 500;
-    logEvent('client.issueProduct.failed', { cellNumber: product.cellNumber, productId: product.id });
-    throw error;
+    logEvent('client.issueProduct.accepted', {
+      cellNumber: product.cellNumber,
+      productId: product.id,
+      controllerChannel: controllerResponse?.channel ?? null,
+      controllerRawHex: controllerResponse?.rawHex ?? null,
+    });
+
+    return { success: true };
+  } catch (error) {
+    logEvent('client.issueProduct.failed', {
+      cellNumber: product.cellNumber,
+      productId: product.id,
+      message: error.message,
+      code: error.code,
+    });
+
+    const wrappedError = new Error(error.message || 'Failed to issue product');
+    wrappedError.statusCode =
+      error.statusCode && Number.isInteger(error.statusCode) ? error.statusCode : 502;
+    throw wrappedError;
   }
-
-  logEvent('client.issueProduct.accepted', { cellNumber: product.cellNumber, productId: product.id });
-
-  return { success: true };
 };
 
 module.exports = {

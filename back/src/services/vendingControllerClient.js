@@ -14,7 +14,7 @@ const parsePositiveInt = (value) => {
 };
 
 const CONTROLLER_API_BASE_URL = ensureTrailingSlash(
-  process.env.VENDING_CONTROLLER_API_URL?.trim() || 'http://127.0.0.1:3000/api/v1',
+  process.env.VENDING_CONTROLLER_API_URL?.trim() || 'http://127.0.0.1:3001/api/v1',
 );
 const REQUEST_TIMEOUT_MS = parsePositiveInt(process.env.VENDING_CONTROLLER_REQUEST_TIMEOUT_MS) || 10000;
 const DEFAULT_VEND_TIMEOUT_MS = parsePositiveInt(process.env.VENDING_CONTROLLER_VEND_TIMEOUT_MS);

@@ -1,7 +1,7 @@
 import { AxiosCoreApi } from './axiosCore';
 import { ClientModule } from './modules/cleint/clientModule';
 
-const SNACK_API_BASE_URL = import.meta.env.VITE_APP_SNACK_API_URL ?? 'http://147.78.67.179:4000';
+const SNACK_API_BASE_URL = import.meta.env.VITE_APP_SNACK_API_URL ?? 'http://localhost:4000';
 
 export class Api {
   private readonly request: AxiosCoreApi;

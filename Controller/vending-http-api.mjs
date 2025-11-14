@@ -791,7 +791,7 @@ export async function startVendingHttpServer({
  * — автоматически стартуем HTTP-сервер.
  */
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const portPath = process.argv[2] || '/dev/ttyUSB0';
+  const portPath = process.argv[2] || '/dev/ttyS3';
   const httpPort = process.argv[3] ? Number(process.argv[3]) : 3001;
 
   // Простейший логгер

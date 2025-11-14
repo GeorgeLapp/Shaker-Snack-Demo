@@ -5,7 +5,7 @@ import { importCatalog } from './importCatalog.mjs';
 
 // ==== Параметры запуска ====
 // 1-й аргумент: имя файла базы (по умолчанию goods.db)
-const DB_FILE = process.argv[2] || 'goods.db';
+const DB_FILE = process.argv[2] || 'c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/goods.db';
 
 // Данные авторизации и контекста берём из ENV:
 const CLIENT_ID     = process.env.SHAKER_CLIENT_ID     || 'snack_02';

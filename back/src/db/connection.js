@@ -4,9 +4,13 @@ const Database = require('better-sqlite3');
 let dbInstance;
 
 const resolveDatabasePath = () => {
-  return process.env.PRODUCTS_DB_PATH
-    ? path.resolve(process.env.PRODUCTS_DB_PATH)
-    : path.resolve(__dirname, '../../..', 'DB', 'products_db.db');
+  const customPath = process.env.GOODS_DB_PATH || process.env.PRODUCTS_DB_PATH;
+
+  if (customPath) {
+    return path.resolve(customPath);
+  }
+
+  return path.resolve(__dirname, '../../..', 'Telemetry', 'goods.db');
 };
 
 const createDatabaseInstance = () => {

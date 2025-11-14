@@ -13,7 +13,8 @@ Environment variables:
 
 - `PORT` - port to bind the HTTP server. Defaults to `4000`.
 - `ALLOWED_ORIGIN` - CORS header value for `Access-Control-Allow-Origin`. Defaults to `*`.
-- `PRODUCTS_DB_PATH` - optional absolute or relative path to the SQLite database with product details. Defaults to `../DB/products_db.db` relative to the project root.
+- `GOODS_DB_PATH` - optional absolute or relative path to the `goods.db` SQLite database with the product catalog. Defaults to `../Telemetry/goods.db` relative to the project root.
+- `PRODUCTS_DB_PATH` - legacy override for the database path (kept for backwards compatibility).
 - `STATIC_MEDIA_ROOT` - optional absolute or relative path to the directory with media assets. Defaults to `../SnackMedia` relative to the project root.
 - `STATIC_ROUTE_PREFIX` - public URL prefix used to expose static assets. Defaults to `/media`.
 - `VENDING_CONTROLLER_API_URL` - base URL of the hardware controller HTTP API (for example `http://127.0.0.1:3000/api/v1`). Defaults to that local URL.
@@ -22,7 +23,7 @@ Environment variables:
 
 ## Data source
 
-Product information is loaded from a SQLite database (`products_db.db`). The schema contains a single table `product_details` with nutritional information and image paths for each cell of the vending machine. Every request to `/api/product-matrix` reads directly from this database, so updating the DB file immediately affects API responses.
+Product information is loaded from the `goods.db` SQLite database that ships with the Telemetry module. The backend joins `matrix_cell_config`, `catalog_product`, and `catalog_brand` to produce the matrix: each enabled cell inherits its row number, price (converted from `price_minor`), absolute `img_url`, brand name, and nutritional data from the catalog tables. Updating `goods.db` immediately affects `/api/product-matrix` responses.
 
 ## Static assets
 
@@ -47,4 +48,4 @@ npm install
 npm run dev
 ```
 
-Ensure that the SQLite database file is located at the default path (`../DB/products_db.db`) or provide a custom location through `PRODUCTS_DB_PATH` before starting the server. Media files are served from `../SnackMedia` by default; adjust `STATIC_MEDIA_ROOT` if you store them elsewhere. Then open `http://localhost:4000/api/product-matrix`, request an asset such as `http://localhost:4000/media/images/01.jpg`, or use the front-end pointed to the same origin.
+Ensure that the SQLite database file is located at the default path (`../Telemetry/goods.db`) or provide a custom location through `GOODS_DB_PATH`/`PRODUCTS_DB_PATH` before starting the server. Media files are served from `../SnackMedia` by default; adjust `STATIC_MEDIA_ROOT` if you store them elsewhere. Then open `http://localhost:4000/api/product-matrix`, request an asset such as `http://localhost:4000/media/images/01.jpg`, or use the front-end pointed to the same origin.

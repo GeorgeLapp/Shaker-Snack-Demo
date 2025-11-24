@@ -263,6 +263,7 @@ export const Signals = {
   CellsSetCellPrice:   /** @type {FsmEvent} */('Cells.SetCellPrice'),
   CellsOpenAssignProduct: /** @type {FsmEvent} */('Cells.OpenAssignProduct'),
   ProductsAssign: /** @type {FsmEvent} */('Products.Assign'),
+  ProductsAssignRow: /** @type {FsmEvent} */('Products.AssignRow'),
   CellsSetStatus: /** @type {FsmEvent} */('Cells.SetStatus'),
   CellsMerge:     /** @type {FsmEvent} */('Cells.Merge'),
   CellsSetType:   /** @type {FsmEvent} */('Cells.SetType'),
@@ -429,6 +430,9 @@ export class ServiceMenuFSM {
       }
       case Signals.ProductsAssign: {
         return this._fromProductsListReady_Assign(payload);
+      }
+       case Signals.ProductsAssignRow: {
+        return this._fromProductsListReady_AssignRow(payload);
       }
 
       // ---- конфиг ячеек ----
@@ -679,6 +683,60 @@ export class ServiceMenuFSM {
     }
     return this._cellsProcessError(res, 'AssignProductProcessing');
   }
+  // Назначить товар на ряд / выбранные ячейки
+async _fromProductsListReady_AssignRow({ row, productId, scope = 'all', cellIds }) {
+  if (this.state !== 'ProductsListReady') {
+    return this._goto(this.state, {}, { warn: 'Wrong state' });
+  }
+
+  this._requireToken();
+
+  // Временноe состояние (аналогично AssignProductProcessing)
+  this.state = 'AssignProductRowProcessing';
+
+  // Берём текущий список ячеек — FSM уже должен хранить его после загрузки
+  const cells = this.ctx.cells || [];
+
+  // 1) Вычисляем целевые ячейки
+  let targetCells = [];
+
+  if (scope === 'selected' && Array.isArray(cellIds) && cellIds.length > 0) {
+    // Явно заданный список ячеек
+    targetCells = cells.filter(c => cellIds.includes(c.id));
+  } else {
+    // Проверяем row
+    if (typeof row !== 'number') {
+      return this._goto('ProductsListReady', {}, { warn: 'row is required' });
+    }
+
+    // Все ячейки в ряду
+    targetCells = cells.filter(c => c.row === row);
+
+    // Если нужно только ячейки без товара
+    if (scope === 'emptyOnly') {
+      targetCells = targetCells.filter(c => !c.productId && !c.product && !c.goodId);
+    }
+  }
+
+  // Если нет ячеек — ничего не делаем, но возвращаем список как есть
+  if (targetCells.length === 0) {
+    return this._cellsReload('products');
+  }
+
+  // 2) Последовательно назначаем товар
+  for (const cell of targetCells) {
+    const res = await this.backend.assignProduct(this.ctx.token, cell.id, productId);
+
+    if (res.status !== 200) {
+      // Ошибка — используем единый механизм обработки ошибок ячеек
+      return this._cellsProcessError(res, 'AssignProductRowProcessing');
+    }
+  }
+
+  // 3) Успех — перезагружаем ячейки и возвращаем Products screen
+  return this._cellsReload('products');
+}
+
 
   // ----- Cells: Конфигурация -----
   async _fromCellsConfig_SetStatus({ cellIds, status }) {

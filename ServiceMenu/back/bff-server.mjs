@@ -76,6 +76,7 @@ bindRoute('post', '/bff/cells/price/cell', 'Cells.SetCellPrice');
 
 bindRoute('post', '/bff/products/open-list', 'Cells.OpenAssignProduct');
 bindRoute('post', '/bff/products/assign', 'Products.Assign');
+bindRoute('post', '/bff/products/assign-row', 'Products.AssignRow');
 
 bindRoute('post', '/bff/cells/status', 'Cells.SetStatus');
 bindRoute('post', '/bff/cells/merge', 'Cells.Merge');

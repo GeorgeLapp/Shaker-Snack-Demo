@@ -144,31 +144,86 @@ class TelemetryDb {
    * Применение каталога к локальной БД по схеме productsdb.sql.
    * @param {Array<any>} items массив товаров из body baseProductRequestExportTopic
    */
+    /**
+   * Применение каталога к локальной БД по схеме productsdb.sql.
+   * Учитывает UNIQUE-ограничение на catalog_brand.name:
+   *  - если бренд с таким name уже существует, используем его id;
+   *  - если нет — добавляем новый бренд и читаем его id.
+   *
+   * @param {Array<any>} items массив товаров из body baseProductRequestExportTopic
+   */
   async applyCatalog(items) {
     await this.runAsync('BEGIN TRANSACTION');
     try {
-      // 1) Бренды
-      for (const item of items) {
-        const brand = item.goodBrand || null;
-        if (brand && typeof brand.id === 'number') {
-          await this.runAsync(
-            `
-            INSERT INTO catalog_brand (id, name)
-            VALUES ($id, $name)
-            ON CONFLICT(id) DO UPDATE SET name = excluded.name
-            `,
-            {
-              $id: brand.id,
-              $name: brand.name || ''
-            }
-          );
+      // 1. Загружаем уже существующие бренды и строим карту name -> id
+      const existingBrands = await this.allAsync(
+        'SELECT id, name FROM catalog_brand'
+      );
+
+      /** @type {Map<string, number>} */
+      const brandIdByName = new Map();
+      for (const row of existingBrands) {
+        if (row.name != null) {
+          brandIdByName.set(row.name, row.id);
         }
       }
 
-      // 2) Продукты
+      // 2. Проходим по всем товарам и гарантируем наличие брендов
       for (const item of items) {
         const brand = item.goodBrand || null;
-        const brandId = brand && typeof brand.id === 'number' ? brand.id : null;
+        if (!brand || !brand.name) {
+          // бренд не указан — пропускаем, product будет с brand_id = NULL
+          continue;
+        }
+
+        const brandName = brand.name;
+        // если бренд уже есть в карте — ничего не делаем
+        if (brandIdByName.has(brandName)) {
+          continue;
+        }
+
+        // бренда с таким именем ещё нет — добавляем
+        const telemetryBrandId = typeof brand.id === 'number' ? brand.id : null;
+
+        if (telemetryBrandId != null) {
+          // пытаемся вставить с заданным id
+          await this.runAsync(
+            `
+            INSERT OR IGNORE INTO catalog_brand (id, name)
+            VALUES ($id, $name)
+            `,
+            {
+              $id: telemetryBrandId,
+              $name: brandName
+            }
+          );
+        } else {
+          // если id нет — даём БД самой сгенерировать
+          await this.runAsync(
+            `
+            INSERT OR IGNORE INTO catalog_brand (name)
+            VALUES ($name)
+            `,
+            { $name: brandName }
+          );
+        }
+
+        // вычитываем фактический id бренда по имени
+        const row = await this.getAsync(
+          'SELECT id FROM catalog_brand WHERE name = $name',
+          { $name: brandName }
+        );
+        if (!row || row.id == null) {
+          throw new Error(`Failed to resolve brand id for name "${brandName}"`);
+        }
+        brandIdByName.set(brandName, row.id);
+      }
+
+      // 3. Upsert продуктов, опираясь на brandIdByName
+      for (const item of items) {
+        const brand = item.goodBrand || null;
+        const brandName = brand?.name || null;
+        const brandId = brandName ? (brandIdByName.get(brandName) ?? null) : null;
 
         const priceMinor = typeof item.price === 'number'
           ? Math.round(item.price * PRICE_SCALE)
@@ -242,7 +297,7 @@ class TelemetryDb {
         );
       }
 
-      // 3) Обновляем состояние синхронизации каталога
+      // 4. Обновляем состояние синхронизации каталога
       await this.runAsync(
         `
         INSERT INTO catalog_sync_state (id, last_sync_ts, source_hash)

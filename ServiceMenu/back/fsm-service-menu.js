@@ -39,7 +39,7 @@
  * |'__Backend.200'|'__Backend.204'|'__Backend.401'|'__Backend.4xx5xx'} FsmEvent */
 
 /** @typedef {{ id: number, row: number, capacity?: number, stock?: number, price?: number, productId?: number, status?: 'enabled'|'disabled', type?: string }} CellDto */
-/** @typedef {{ id: number, name: string }} ProductDto */
+/** @typedef {{ id: number, name: string, brandName?: string,productName?: string,imgPath?: string}} ProductDto */
 /** @typedef {{ ts: string, level: string, msg: string }} LogEntryDto */
 
 /**

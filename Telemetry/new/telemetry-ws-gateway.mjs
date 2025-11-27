@@ -170,8 +170,10 @@ export class TelemetryWsGateway {
   /**
    * Непосредственное открытие WebSocket.
    */
-  openWs() {
+   openWs() {
     return new Promise((resolve, reject) => {
+      console.log('Opening telemetry WebSocket connection...', this.wsUrl);
+
       const ws = new WebSocket(this.wsUrl, {
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -180,12 +182,14 @@ export class TelemetryWsGateway {
       });
 
       ws.on('open', () => {
+        console.log('Telemetry WebSocket connected');
         this.ws = ws;
         this.setupWsHandlers();
         resolve();
       });
 
       ws.on('error', (err) => {
+        console.error('Telemetry WebSocket error:', err);
         reject(err);
       });
     });

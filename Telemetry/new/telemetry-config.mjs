@@ -8,7 +8,7 @@ export const HTTP_PORT = Number(process.env.TELEMETRY_HTTP_PORT ?? 3000);
 // URL для получения OAuth2 access_token
 export const TELEMETRY_OAUTH_URL =
   process.env.TELEMETRY_OAUTH_URL
-  ?? 'https://dev.ishaker.ru/auth/realms/telemetry/protocol/openid-connect/token';
+  ?? 'https://kk.ishaker.ru:4437/realms/machine-realm/protocol/openid-connect/token';
 
 // WebSocket URL сервера телеметрии
 export const TELEMETRY_WS_URL =

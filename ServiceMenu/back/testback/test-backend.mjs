@@ -15,9 +15,64 @@ let STATE = {
     { id: 7, row: 2, capacity: 12, stock: 5, price: 60, productId: null, status: "enabled", type: "spiral" },
     { id: 10,row: 2, capacity: 10, stock: 3, price: 50, productId: null, status: "enabled", type: "spiral" },
   ],
-  products: [{ id: 100, name: "Lays" }, { id: 101, name: "Snickers" }],
+  products: [
+    {
+      id: 0,
+      brandName: "-",
+      productName: "Нет товара",
+      imgPath: "/img/products/no-product.png",
+      // name оставляем для совместимости со старым фронтом
+      name: "Нет товара",
+    },
+    {
+      id: 100,
+      brandName: "Lays",
+      productName: "Lays Сметана и лук 120 г",
+      imgPath: "/img/products/100.png",
+      name: "Lays Сметана и лук 120 г",
+    },
+    {
+      id: 101,
+      brandName: "Snickers",
+      productName: "Snickers 50 г",
+      imgPath: "/img/products/101.png",
+      name: "Snickers 50 г",
+    },
+  ],
   logs: [{ ts: new Date().toISOString(), level: "INFO", msg: "boot" }],
 };
+// ---------------- Хелперы для склейки ячеек с товарами ----------------
+
+/**
+ * Возвращает DTO ячейки с данными товара:
+ * - productId всегда не null (0, если товара нет)
+ * - imgPath, brandName, productName подставляются из STATE.products
+ */
+function buildCellDtoWithProduct(cell) {
+  // Если productId не задан — считаем, что это "Нет товара" (id = 0)
+  const productId = cell.productId ?? 0;
+  const product = STATE.products.find((p) => p.id === productId);
+
+  if (!product) {
+    // На всякий случай — если что-то не так в данных
+    return {
+      ...cell,
+      productId: 0,
+      imgPath: null,
+      brandName: null,
+      productName: null,
+    };
+  }
+
+  return {
+    ...cell,
+    productId: product.id, // гарантированно не null
+    imgPath: product.imgPath ?? null,
+    brandName: product.brandName ?? null,
+    productName: product.productName ?? product.name ?? null,
+  };
+}
+
 
 // ---------------- Error/Delay injection ----------------
 // Вы можете задать для конкретного (method,path) статус ошибки и задержку.
@@ -139,7 +194,11 @@ app.post(`${API_PREFIX}/auth/login`, async (req, res) => {
 app.get(`${API_PREFIX}/cells`, requireAuth, async (req, res) => {
   await maybeDelay(req.method, req.path);
   if (maybeFail(req, res)) return;
-  res.json(STATE.cells);
+
+  // Обогащаем каждую ячейку данными о товаре
+  const cells = STATE.cells.map(buildCellDtoWithProduct);
+
+  res.json(cells);
 });
 
 app.post(`${API_PREFIX}/cells/stock/fill-row`, requireAuth, async (req, res) => {
@@ -208,8 +267,21 @@ app.put(`${API_PREFIX}/cells/:id/price`, requireAuth, async (req, res) => {
 app.get(`${API_PREFIX}/products`, requireAuth, async (req, res) => {
   await maybeDelay(req.method, req.path);
   if (maybeFail(req, res)) return;
-  res.json(STATE.products);
+
+  // Приводим товары к единому DTO для фронта:
+  // id, name (для старых мест), brandName, productName, imgPath
+  const products = STATE.products.map((p) => ({
+    id: p.id,
+    // name оставляем как productName для обратной совместимости
+    name: p.productName || p.name,
+    brandName: p.brandName ?? null,
+    productName: p.productName ?? p.name ?? null,
+    imgPath: p.imgPath ?? null,
+  }));
+
+  res.json(products);
 });
+
 
 app.put(`${API_PREFIX}/cells/:id/product`, requireAuth, async (req, res) => {
   await maybeDelay(req.method, req.path);

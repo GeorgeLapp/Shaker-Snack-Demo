@@ -72,20 +72,36 @@ class TelemetryDb {
   // machine_info
   // ================
 
+   /**
+   * Инициализация служебной таблицы для хранения machineInfo.
+   * ВАЖНО: в CHECK нельзя использовать параметр, поэтому либо:
+   *  - вообще не использовать CHECK,
+   *  - либо захардкодить константу.
+   *
+   * Здесь делаем проще: без CHECK, но всюду используем MACHINE_INFO_SINGLETON_ID.
+   */
   async ensureMachineInfoTable() {
-    const sql = `
+    // 1. Создаём таблицу без параметров
+    await this.runAsync(`
       CREATE TABLE IF NOT EXISTS machine_info (
-        id              INTEGER PRIMARY KEY CHECK (id = $id),
+        id              INTEGER PRIMARY KEY,
         machine_id      INTEGER,
         organization_id INTEGER,
         model_id        INTEGER,
         serial_number   TEXT
-      );
+      )
+    `);
+
+    // 2. Гарантируем наличие единственной строки с id = MACHINE_INFO_SINGLETON_ID
+    await this.runAsync(
+      `
       INSERT OR IGNORE INTO machine_info (id, machine_id, organization_id, model_id, serial_number)
-      VALUES ($id, NULL, NULL, NULL, NULL);
-    `;
-    await this.runAsync(sql, { $id: MACHINE_INFO_SINGLETON_ID });
+      VALUES ($id, NULL, NULL, NULL, NULL)
+      `,
+      { $id: MACHINE_INFO_SINGLETON_ID }
+    );
   }
+
 
   async getMachineInfo() {
     await this.ensureMachineInfoTable();

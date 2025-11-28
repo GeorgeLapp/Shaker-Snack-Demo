@@ -156,7 +156,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === 'GET' && pathname === '/api/product-matrix') {
-      const data = getProductMatrix();
+      const data = await getProductMatrix();
       sendJson(res, 200, data);
       return;
     }

@@ -5,7 +5,7 @@
 
 import path from 'node:path';
 
-export const HTTP_PORT = Number(process.env.TELEMETRY_HTTP_PORT ?? 3000);
+export const HTTP_PORT = Number(process.env.TELEMETRY_HTTP_PORT ?? 3001);
 
 // URL для получения OAuth2 access_token
 export const TELEMETRY_OAUTH_URL =
@@ -34,4 +34,4 @@ export const DB_PATH =
 export const PRODUCT_IMAGES_DIR =
   process.env.TELEMETRY_PRODUCT_IMAGES_DIR
     ? path.resolve(process.env.TELEMETRY_PRODUCT_IMAGES_DIR)
-    : path.resolve('images');
+    : path.resolve('c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/images');

@@ -1046,6 +1046,19 @@ export class TelemetryCore {
    * @param {Array<any>} rows
    * @returns {Promise<Array<any>>}
    */
+    /**
+   * Заменяет путь к картинке в строках каталога/матрицы на локальный,
+   * если найдена соответствующая картинка.
+   *
+   * Ищем productId в полях: id, good_id, goodId.
+   * Обновляем поля изображения, если они есть:
+   *   - img_url / imgUrl
+   *   - img_path / imgPath
+   *   - product_img / productImg
+   *
+   * @param {Array<any>} rows
+   * @returns {Promise<Array<any>>}
+   */
   async mapRowsWithLocalImages(rows) {
     if (!this.imageDir || !Array.isArray(rows) || rows.length === 0) {
       return rows;
@@ -1060,6 +1073,7 @@ export class TelemetryCore {
     return rows.map((row) => {
       const copy = { ...row };
 
+      // определяем productId для строки
       const productId =
         copy.id ??
         copy.good_id ??
@@ -1069,6 +1083,7 @@ export class TelemetryCore {
       if (productId != null && index.has(productId)) {
         const localPath = index.get(productId);
 
+        // поля каталога
         if (Object.prototype.hasOwnProperty.call(copy, 'img_url')) {
           copy.img_url = localPath;
         }
@@ -1081,10 +1096,19 @@ export class TelemetryCore {
         if (Object.prototype.hasOwnProperty.call(copy, 'imgPath')) {
           copy.imgPath = localPath;
         }
+
+        // поля матрицы (как в vw_matrix_cell_full)
+        if (Object.prototype.hasOwnProperty.call(copy, 'product_img')) {
+          copy.product_img = localPath;
+        }
+        if (Object.prototype.hasOwnProperty.call(copy, 'productImg')) {
+          copy.productImg = localPath;
+        }
       }
 
       return copy;
     });
   }
+
 
 }

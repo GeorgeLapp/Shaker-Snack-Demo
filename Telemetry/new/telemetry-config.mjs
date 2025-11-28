@@ -34,4 +34,4 @@ export const DB_PATH =
 export const PRODUCT_IMAGES_DIR =
   process.env.TELEMETRY_PRODUCT_IMAGES_DIR
     ? path.resolve(process.env.TELEMETRY_PRODUCT_IMAGES_DIR)
-    : path.resolve('c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/images');
+    : path.resolve('c:/Users/user/Desktop/Shaker-Snack-Demo/SnackMedia');

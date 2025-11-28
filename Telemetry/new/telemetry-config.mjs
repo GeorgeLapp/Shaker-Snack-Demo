@@ -3,6 +3,8 @@
 // Все значения можно переопределить через переменные окружения.
 // Комментарии на русском, тексты ошибок/логов — на английском.
 
+import path from 'node:path';
+
 export const HTTP_PORT = Number(process.env.TELEMETRY_HTTP_PORT ?? 3000);
 
 // URL для получения OAuth2 access_token
@@ -28,3 +30,8 @@ export const TELEMETRY_CLIENT_SECRET =
 export const DB_PATH =
   process.env.TELEMETRY_DB_PATH
   ?? 'c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/goods.db';
+
+export const PRODUCT_IMAGES_DIR =
+  process.env.TELEMETRY_PRODUCT_IMAGES_DIR
+    ? path.resolve(process.env.TELEMETRY_PRODUCT_IMAGES_DIR)
+    : path.resolve('images');

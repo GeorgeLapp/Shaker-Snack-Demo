@@ -599,16 +599,21 @@ class TelemetryDb {
 // ========================
 // TelemetryCore – высокоуровневый API
 // ========================
-
 export class TelemetryCore {
   /**
    * @param {object} options
    * @param {string} options.dbPath     путь к SQLite-файлу
    * @param {import('./telemetry-ws-gateway.mjs').TelemetryWsGateway} options.transport
+   * @param {string|null} [options.imageDir] директория с локальными картинками товаров
    */
-  constructor({ dbPath, transport }) {
+  constructor({ dbPath, transport, imageDir = null }) {
     this.db = new TelemetryDb(dbPath);
     this.transport = transport;
+
+    // Директория с локальными изображениями товаров (может быть null)
+    this.imageDir = imageDir;
+    // Кэш соответствий productId -> абсолютный путь к файлу
+    this.imagePathByProductId = null;
 
     this.transport.onPush((msg) => {
       this.handleIncomingPush(msg).catch((err) => {
@@ -616,6 +621,7 @@ export class TelemetryCore {
       });
     });
   }
+
 
   async close() {
     await this.db.close();
@@ -663,7 +669,12 @@ export class TelemetryCore {
    * Синхронизация каталога и скачивание картинок (если указан imageDir).
    * @param {string|null} imageDir
    */
-  async syncCatalog(imageDir = null) {
+   /**
+   * Синхронизация каталога и скачивание картинок.
+   * Если imageDir не передан явно, используется this.imageDir (из конфига).
+   * @param {string|null} [imageDirOverride]
+   */
+  async syncCatalog(imageDirOverride = null) {
     const machine = await this.ensureMachineInfo();
 
     const { ack, result } = await this.transport.send({
@@ -696,8 +707,11 @@ export class TelemetryCore {
     const items = result.body;
     await this.db.applyCatalog(items);
 
+    const imageDir = imageDirOverride ?? this.imageDir;
     if (imageDir) {
       await this.downloadProductImages(items, imageDir);
+      // После обновления файлов — сбрасываем кэш путей, чтобы пересканировать при следующем запросе
+      this.imagePathByProductId = null;
     }
 
     return {
@@ -763,10 +777,11 @@ export class TelemetryCore {
       }
     }
   }
-
   async getCatalog() {
-    return this.db.getCatalogFull();
+    const rows = await this.db.getCatalogFull();
+    return this.mapRowsWithLocalImages(rows);
   }
+
 
   // ======================
   // Матрица
@@ -915,10 +930,11 @@ export class TelemetryCore {
     };
   }
 
+  
   async getMatrix() {
-    return this.db.getMatrixFull();
+    const rows = await this.db.getMatrixFull();
+    return this.mapRowsWithLocalImages(rows);
   }
-
   // ======================
   // Продажи
   // ======================
@@ -982,4 +998,93 @@ export class TelemetryCore {
         console.warn('Unknown telemetry push type:', msg.type);
     }
   }
+    /**
+   * Строит (или возвращает из кэша) карту соответствий:
+   *   productId (целое число) -> абсолютный путь к локальному файлу изображения.
+   * Картинки ожидаются в this.imageDir и имеют формат "<id>.<ext>".
+   */
+  async buildImageIndexIfNeeded() {
+    if (!this.imageDir) {
+      // нет директории — нет индекса
+      this.imagePathByProductId = null;
+      return;
+    }
+
+    if (this.imagePathByProductId) {
+      return;
+    }
+
+    const index = new Map();
+
+    try {
+      const entries = await fs.readdir(this.imageDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const match = entry.name.match(/^(\d+)\.[^.]+$/);
+        if (!match) continue;
+
+        const productId = Number(match[1]);
+        if (!Number.isFinite(productId)) continue;
+
+        const fullPath = path.resolve(this.imageDir, entry.name);
+        index.set(productId, fullPath);
+      }
+    } catch (err) {
+      console.error('Failed to read product images directory:', err);
+    }
+
+    this.imagePathByProductId = index;
+  }
+
+  /**
+   * Заменяет путь к картинке в строках каталога/матрицы на локальный,
+   * если найдена соответствующая картинка.
+   *
+   * Ищем productId в полях: id, good_id, goodId.
+   * Обновляем поля изображения, если они есть: img_url, imgUrl, img_path, imgPath.
+   *
+   * @param {Array<any>} rows
+   * @returns {Promise<Array<any>>}
+   */
+  async mapRowsWithLocalImages(rows) {
+    if (!this.imageDir || !Array.isArray(rows) || rows.length === 0) {
+      return rows;
+    }
+
+    await this.buildImageIndexIfNeeded();
+    const index = this.imagePathByProductId;
+    if (!index || index.size === 0) {
+      return rows;
+    }
+
+    return rows.map((row) => {
+      const copy = { ...row };
+
+      const productId =
+        copy.id ??
+        copy.good_id ??
+        copy.goodId ??
+        null;
+
+      if (productId != null && index.has(productId)) {
+        const localPath = index.get(productId);
+
+        if (Object.prototype.hasOwnProperty.call(copy, 'img_url')) {
+          copy.img_url = localPath;
+        }
+        if (Object.prototype.hasOwnProperty.call(copy, 'imgUrl')) {
+          copy.imgUrl = localPath;
+        }
+        if (Object.prototype.hasOwnProperty.call(copy, 'img_path')) {
+          copy.img_path = localPath;
+        }
+        if (Object.prototype.hasOwnProperty.call(copy, 'imgPath')) {
+          copy.imgPath = localPath;
+        }
+      }
+
+      return copy;
+    });
+  }
+
 }

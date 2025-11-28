@@ -18,8 +18,10 @@ import {
   TELEMETRY_WS_URL,
   TELEMETRY_CLIENT_ID,
   TELEMETRY_CLIENT_SECRET,
-  DB_PATH
+  DB_PATH,
+  PRODUCT_IMAGES_DIR
 } from './telemetry-config.mjs';
+
 
 // ========================
 // HTTP статусы (без магии)
@@ -43,8 +45,10 @@ const transport = new TelemetryWsGateway({
 
 const telemetryCore = new TelemetryCore({
   dbPath: DB_PATH,
-  transport
+  transport,
+  imageDir: PRODUCT_IMAGES_DIR
 });
+
 
 // ========================
 // Вспомогательная валидация
@@ -169,14 +173,12 @@ app.use(express.json());
 /**
  * Синхронизация каталога с сервером телеметрии.
  * Опциональный query-параметр imageDir производит скачивание картинок.
- */
-app.post('/api/telemetry/catalog/sync', async (req, res) => {
+ */app.post('/api/telemetry/catalog/sync', async (req, res) => {
   try {
-    const imageDir = typeof req.query.imageDir === 'string'
-      ? req.query.imageDir
-      : null;
+    // Используем директорию для картинок из конфигурации (PRODUCT_IMAGES_DIR),
+    // заданную на уровне TelemetryCore при создании.
+    const result = await telemetryCore.syncCatalog();
 
-    const result = await telemetryCore.syncCatalog(imageDir);
     const statusCode = result.success ? HTTP_STATUS_OK : HTTP_STATUS_BAD_GATEWAY;
     res.status(statusCode).json(result);
   } catch (err) {

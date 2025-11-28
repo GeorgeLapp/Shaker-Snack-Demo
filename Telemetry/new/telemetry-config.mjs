@@ -29,9 +29,9 @@ export const TELEMETRY_CLIENT_SECRET =
 // Путь к локальной базе данных товаров/матрицы
 export const DB_PATH =
   process.env.TELEMETRY_DB_PATH
-  ?? 'c:/Users/user/Desktop/Shaker-Snack-Demo/Telemetry/goods.db';
+  ?? path.resolve('~/Shaker-Snack-Demo/Telemetry/goods.db');
 
 export const PRODUCT_IMAGES_DIR =
   process.env.TELEMETRY_PRODUCT_IMAGES_DIR
     ? path.resolve(process.env.TELEMETRY_PRODUCT_IMAGES_DIR)
-    : path.resolve('c:/Users/user/Desktop/Shaker-Snack-Demo/SnackMedia');
+    : path.resolve('~/Shaker-Snack-Demo/SnackMedia');

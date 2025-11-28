@@ -4,6 +4,14 @@ const { logEvent } = require('../logger');
 const { vendProduct } = require('../services/vendingControllerClient');
 
 const PAYMENT_DELAY_MS = Number(process.env.PAYMENT_DELAY_MS || 5000);
+const PRICE_SCALE = 100;
+
+// Support Node < 18, where global fetch may be missing
+const fetchImpl =
+  typeof fetch === 'function'
+    ? fetch
+    : (...args) =>
+        import('node-fetch').then(({ default: nodeFetch }) => nodeFetch(...args));
 
 // Базовый URL HTTP-сервиса телеметрии (telemetry-api.mjs)
 // Например, если там HTTP_PORT = 3001, то: http://localhost:3001
@@ -20,17 +28,9 @@ async function telemetryFetchJson(path) {
   const url = `${TELEMETRY_API_BASE_URL}${path}`;
 
   // На всякий случай проверим наличие fetch (Node 18+)
-  if (typeof fetch !== 'function') {
-    const error = new Error(
-      'Global fetch is not available. Please use Node.js 18+ or polyfill fetch.',
-    );
-    error.statusCode = 500;
-    throw error;
-  }
-
   let response;
   try {
-    response = await fetch(url, {
+    response = await fetchImpl(url, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -102,6 +102,114 @@ async function fetchProductMatrixFromTelemetry() {
   return matrix;
 }
 
+async function fetchCatalogFromTelemetry() {
+  const catalog = await telemetryFetchJson('/api/catalog');
+  if (!Array.isArray(catalog)) {
+    return [];
+  }
+  return catalog;
+}
+
+const toNumberOrNull = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const calcRowNumber = (rawRowNumber, cellNumber) => {
+  const normalizedRow = toNumberOrNull(rawRowNumber);
+  if (normalizedRow !== null) {
+    return normalizedRow;
+  }
+
+  if (cellNumber !== null) {
+    return Math.floor((cellNumber - 1) / 10) + 1;
+  }
+
+  return 0;
+};
+
+const normalizeImagePath = (rawPath) => {
+  if (!rawPath) return '';
+  const httpPattern = /^https?:\/\//i;
+  if (httpPattern.test(rawPath)) {
+    return rawPath;
+  }
+  const parts = String(rawPath).split(/[/\\]+/);
+  return parts[parts.length - 1] || '';
+};
+
+const normalizeMatrixPayload = (matrixRows, catalogRows) => {
+  const catalogMap = new Map();
+  for (const product of catalogRows || []) {
+    const productId =
+      toNumberOrNull(product?.id) ??
+      toNumberOrNull(product?.good_id) ??
+      toNumberOrNull(product?.goodId);
+
+    if (productId !== null) {
+      catalogMap.set(productId, product);
+    }
+  }
+
+  if (!Array.isArray(matrixRows)) {
+    return [];
+  }
+
+  return matrixRows
+    .filter((row) => row && row.enabled !== 0)
+    .map((row) => {
+      const cellNumber =
+        toNumberOrNull(row?.cell_number) ?? toNumberOrNull(row?.cellNumber);
+      const productId =
+        toNumberOrNull(row?.good_id) ??
+        toNumberOrNull(row?.goodId) ??
+        toNumberOrNull(row?.id);
+      const product = productId !== null ? catalogMap.get(productId) : null;
+
+      const priceMinor =
+        toNumberOrNull(row?.price_minor) ??
+        toNumberOrNull(row?.priceMinor) ??
+        toNumberOrNull(product?.price_minor) ??
+        toNumberOrNull(product?.priceMinor);
+
+      const explicitPrice = toNumberOrNull(row?.price);
+      const price =
+        explicitPrice !== null
+          ? explicitPrice
+          : priceMinor !== null
+          ? priceMinor / PRICE_SCALE
+          : 0;
+
+      const imgCandidate =
+        row?.imgPath ??
+        row?.img_url ??
+        row?.imgUrl ??
+        row?.product_img ??
+        row?.productImg ??
+        product?.img_url ??
+        product?.imgUrl;
+
+      return {
+        id: productId ?? cellNumber ?? 0,
+        cellNumber: cellNumber ?? 0,
+        rowNumber: calcRowNumber(row?.row_number ?? row?.rowNumber, cellNumber),
+        price,
+        imgPath: normalizeImagePath(imgCandidate),
+        brandName: product?.brand_name ?? product?.brandName ?? '',
+        productName:
+          row?.product_name ?? row?.productName ?? product?.taste ?? '',
+        description: product?.description ?? row?.description ?? '',
+        calories: toNumberOrNull(product?.calories ?? row?.calories),
+        proteins: toNumberOrNull(product?.proteins ?? row?.proteins),
+        fats: toNumberOrNull(product?.fats ?? row?.fats),
+        carbohydrates: toNumberOrNull(
+          product?.carbohydrates ?? row?.carbohydrates,
+        ),
+      };
+    })
+    .filter((item) => item.cellNumber);
+};
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -109,13 +217,17 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Теперь берём её не из локальной БД, а из модуля телеметрии.
  */
 const getProductMatrix = async () => {
-  const matrix = await fetchProductMatrixFromTelemetry();
-  console.log(matrix);
+  const [matrix, catalog] = await Promise.all([
+    fetchProductMatrixFromTelemetry(),
+    fetchCatalogFromTelemetry().catch(() => []),
+  ]);
+
+  const normalized = normalizeMatrixPayload(matrix, catalog);
   logEvent('client.getProductMatrix', {
-    totalItems: Array.isArray(matrix) ? matrix.length : 0,
+    totalItems: normalized.length,
   });
 
-  return matrix;
+  return normalized;
 };
 
 /**
@@ -140,9 +252,12 @@ const validatePayload = async (payload) => {
   }
 
   // Берём актуальную матрицу из телеметрии и ищем товар по номеру ячейки
-  const matrix = await fetchProductMatrixFromTelemetry();
+  const [matrix, catalog] = await Promise.all([
+    fetchProductMatrixFromTelemetry(),
+    fetchCatalogFromTelemetry().catch(() => []),
+  ]);
 
-  const product = matrix.find(
+  const product = normalizeMatrixPayload(matrix, catalog).find(
     (item) => Number(item.cellNumber) === Number(cellNumber),
   );
 

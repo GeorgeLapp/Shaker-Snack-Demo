@@ -1262,7 +1262,7 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   const portPath =
     process.env.VENDING_PORT_PATH ||
     process.argv[2] ||
-    '/dev/ttyUSB0';
+    '/dev/ttyS3';
 
   const httpPort = Number(
     process.env.VENDING_HTTP_PORT || process.argv[3] || 5000,

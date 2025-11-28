@@ -3,43 +3,144 @@
 /**
  * HTTP API для вызова методов модуля vending-controller.
  *
- * Этот модуль поднимает HTTP-сервер и предоставляет REST-эндпоинты
- * для управления контроллером вендингового автомата:
+ * Этот модуль поднимает REST-сервер и предоставляет эндпоинты для
+ * ВСЕХ публичных методов VendingController.
  *
- *   POST /api/v1/vend/simple
- *   POST /api/v1/vend/drop-check
- *   GET  /api/v1/channels/:channel/exists
- *   GET  /api/v1/channels/poll
- *   POST /api/v1/self-test
- *   POST /api/v1/reset-all
- *   GET  /api/v1/temperature
- *   GET  /api/v1/door
- *   POST /api/v1/door/open
- *   POST /api/v1/door/unlock
- *   POST /api/v1/lighting
- *   POST /api/v1/buzzer
- *   POST /api/v1/temp/control
- *   POST /api/v1/temp/mode
- *   POST /api/v1/temp/setpoint
- *   POST /api/v1/temp/hysteresis
- *   POST /api/v1/temp/compensation
- *   POST /api/v1/temp/defrost
- *   POST /api/v1/temp/compressor-run
- *   POST /api/v1/temp/fan-idle-off
+ * ======================= ОБЩАЯ СХЕМА МАРШРУТОВ ===========================
  *
- * Формат ответов:
- *   Успех:
- *     { "success": true,  "data": { ... } }
+ * Базовый путь: /api/v1  (по умолчанию, можно поменять через VENDING_BASE_PATH)
  *
- *   Ошибка:
- *     {
- *       "success": false,
- *       "error": {
- *         "code": "INVALID_ARGUMENT",
- *         "message": "Invalid method argument",
- *         "details": { ... }        // может отсутствовать
- *       }
- *     }
+ * ВЫДАЧА ТОВАРА
+ *  - POST {basePath}/vend/simple
+ *      Тело:   { "channel": number, "timeoutMs"?: number }
+ *      Действие: Выдача товара без контроля падения.
+ *
+ *  - POST {basePath}/vend/drop-check
+ *      Тело:   { "channel": number, "timeoutMs"?: number }
+ *      Действие: Выдача товара с контролем падения по фотодатчику.
+ *
+ * КАНАЛЫ: ПРОВЕРКА И ОПРОС
+ *  - GET  {basePath}/channels/:channel/exists?timeoutMs=...
+ *      Действие: Проверка, существует ли физически указанный канал.
+ *
+ *  - GET  {basePath}/channels/poll?maxChannel=60&delayMs=50&timeoutMs=300
+ *      Действие: Опрос всех каналов от 1 до maxChannel с задержкой между запросами.
+ *
+ * КОНФИГУРАЦИЯ ТИПОВ КАНАЛОВ
+ *  - POST {basePath}/channels/:channel/type/belt
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Сделать канал ленточным.
+ *
+ *  - POST {basePath}/channels/:channel/type/spring
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Сделать канал пружинным.
+ *
+ *  - POST {basePath}/channels/type/all/spring
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Все каналы сделать пружинными.
+ *
+ *  - POST {basePath}/channels/type/all/belt
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Все каналы сделать ленточными.
+ *
+ *  - POST {basePath}/channels/:channel/mode/single
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Сделать канал одиночным.
+ *
+ *  - POST {basePath}/channels/:channel/mode/double
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Объединить канал с соседним в двойной.
+ *
+ *  - POST {basePath}/channels/mode/all/single
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Все каналы сделать одиночными.
+ *
+ * ДИАГНОСТИКА / САМТЕСТ
+ *  - POST {basePath}/self-test
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Общий самотест контроллера.
+ *
+ *  - POST {basePath}/reset-all
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Один оборот всех каналов (сервисная операция).
+ *
+ *  - POST {basePath}/repeat-last-reply
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Повтор последнего ответа контроллера (без повторения действия).
+ *
+ * ТЕМПЕРАТУРА И ХОЛОДИЛЬНЫЙ КОНТУР
+ *  - GET  {basePath}/temperature?timeoutMs=...
+ *      Действие: Чтение текущей температуры шкафа.
+ *
+ *  - POST {basePath}/temp/control
+ *      Тело: { "enabled": boolean, "timeoutMs"?: number }
+ *      Действие: Включить/выключить термоконтроль.
+ *
+ *  - POST {basePath}/temp/mode
+ *      Тело: { "mode": "cool" | "heat", "timeoutMs"?: number }
+ *      Действие: Режим термоконтроля (охлаждение/нагрев).
+ *
+ *  - POST {basePath}/temp/setpoint
+ *      Тело: { "celsius": number, "timeoutMs"?: number }
+ *      Действие: Установка целевой температуры.
+ *
+ *  - POST {basePath}/temp/hysteresis
+ *      Тело: { "deltaC": number, "timeoutMs"?: number }
+ *      Действие: Установка гистерезиса.
+ *
+ *  - POST {basePath}/temp/compensation
+ *      Тело: { "celsius": number, "timeoutMs"?: number }
+ *      Действие: Температурная компенсация.
+ *
+ *  - POST {basePath}/temp/defrost
+ *      Тело: { "minutes": number, "timeoutMs"?: number }
+ *      Действие: Длительность дефроста (разморозки).
+ *
+ *  - POST {basePath}/temp/compressor-run
+ *      Тело: { "minutes": number, "timeoutMs"?: number }
+ *      Действие: Макс. время непрерывной работы компрессора.
+ *
+ *  - POST {basePath}/temp/fan-idle-off
+ *      Тело: { "minutes": number, "timeoutMs"?: number }
+ *      Действие: Задержка отключения вентилятора по простою.
+ *
+ *  - POST {basePath}/glass-heater
+ *      Тело: { "on": boolean, "timeoutMs"?: number }
+ *      Действие: Включить/выключить обогрев стекла.
+ *
+ * ДВЕРЬ / СВЕТ / ЗВУК / АКСЕЛЕРОМЕТР
+ *  - GET  {basePath}/door?timeoutMs=...
+ *      Действие: Чтение состояния двери автомата.
+ *
+ *  - POST {basePath}/door/open
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Открыть дверь (доп. команда).
+ *
+ *  - POST {basePath}/door/unlock
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Разблокировать дверь выдачи.
+ *
+ *  - POST {basePath}/lighting
+ *      Тело: { "on": boolean, "timeoutMs"?: number }
+ *      Действие: Включить/выключить подсветку витрины.
+ *
+ *  - POST {basePath}/buzzer
+ *      Тело: { "on": boolean, "timeoutMs"?: number }
+ *      Действие: Включить/выключить зуммер.
+ *
+ *  - POST {basePath}/accelerometer/enable
+ *      Тело: { "timeoutMs"?: number }
+ *      Действие: Включить акселерометр (если поддерживается).
+ *
+ * ======================= ЗАПУСК ПОД pm2 ================================
+ *
+ * Переменные окружения:
+ *   VENDING_PORT_PATH  — путь к UART (COM3, /dev/ttyUSB0 и т.п.) [обязателен]
+ *   VENDING_HTTP_PORT  — HTTP-порт, по умолчанию 3000
+ *   VENDING_BAUD_RATE  — скорость порта, по умолчанию 9600
+ *   VENDING_BASE_PATH  — базовый путь API, по умолчанию /api/v1
+ *
+ * Пример pm2-конфига см. в комментариях внизу файла.
  */
 
 import express from 'express';
@@ -60,27 +161,26 @@ import {
  * @returns {{ status:number, body: { success:false, error:{ code:string, message:string, details?:object }}}}
  */
 function mapErrorToHttp(err) {
-  // Если это "наш" специализированный класс
   if (err instanceof VendingControllerError) {
     let status = 500;
 
     switch (err.code) {
       case ERROR_CODES.INVALID_ARGUMENT:
-        status = 400; // некорректный параметр запроса клиента
+        status = 400;
         break;
       case ERROR_CODES.PORT_NOT_OPEN:
-        status = 503; // порт недоступен, сервис временно не работает
+        status = 503;
         break;
       case ERROR_CODES.COMM_TIMEOUT:
-        status = 504; // тайм-аут взаимодействия с контроллером
+        status = 504;
         break;
       case ERROR_CODES.CONTROLLER_ERROR:
-        status = 502; // контроллер вернул ошибку (низкоуровневая)
+        status = 502;
         break;
       case ERROR_CODES.PROTOCOL_BAD_LENGTH:
       case ERROR_CODES.PROTOCOL_BAD_CHECKSUM:
       case ERROR_CODES.PROTOCOL_UNEXPECTED_STATUS:
-        status = 502; // ошибка протокола
+        status = 502;
         break;
       default:
         status = 500;
@@ -91,7 +191,6 @@ function mapErrorToHttp(err) {
       error: {
         code: err.code,
         message: err.message,
-        // details могут содержать расшифровку механических/оптических ошибок, статусы и т.п.
         ...(err.details ? { details: err.details } : {}),
       },
     };
@@ -99,7 +198,6 @@ function mapErrorToHttp(err) {
     return { status, body };
   }
 
-  // Непредвиденная ошибка (не из слоя контроллера)
   const body = {
     success: false,
     error: {
@@ -129,15 +227,10 @@ function asyncRoute(fn) {
 /**
  * Создаёт и настраивает экземпляр Express-приложения для HTTP API.
  *
- * ВАЖНО:
- *   - Открытие/закрытие UART-порта здесь НЕ выполняется.
- *     Предполагается, что экземпляр VendingController уже создан и открыт
- *     во внешнем коде (или вы используете startVendingHttpServer).
- *
  * @param {object} options
- * @param {VendingController} options.controller - уже созданный экземпляр контроллера
+ * @param {VendingController} options.controller - экземпляр контроллера
  * @param {string} [options.basePath='/api/v1'] - базовый путь для всех эндпоинтов
- * @param {(logObj:any) => void} [options.logger] - опциональный логгер (по умолчанию console.log)
+ * @param {(logObj:any) => void} [options.logger] - логгер (по умолчанию console.log)
  * @returns {import('express').Express}
  */
 export function createVendingHttpApp({
@@ -154,7 +247,7 @@ export function createVendingHttpApp({
   const app = express();
   app.use(express.json());
 
-  // Простейший middleware-логгер HTTP-запросов (можно выключить при необходимости).
+  // Простейший middleware-логгер HTTP-запросов
   app.use((req, _res, next) => {
     logger({
       type: 'http-request',
@@ -166,18 +259,18 @@ export function createVendingHttpApp({
     next();
   });
 
-  /* ------------------------------------------------------------------------ */
-  /*                       ГРУППИРОВКА МАРШРУТОВ ПО basePath                   */
-  /* ------------------------------------------------------------------------ */
-
   const router = express.Router();
 
-  /* ============================== ВЫДАЧА ТОВАРА =========================== */
+  /* ======================================================================== */
+  /*                              ВЫДАЧА ТОВАРА                               */
+  /* ======================================================================== */
 
   /**
    * POST /vend/simple
-   * Тело запроса:
+   * Тело:
    *   { "channel": number, "timeoutMs"?: number }
+   * Действие:
+   *   Выдача товара без контроля падения.
    */
   router.post(
     '/vend/simple',
@@ -201,9 +294,10 @@ export function createVendingHttpApp({
 
   /**
    * POST /vend/drop-check
-   * Выдача с контролем падения.
    * Тело:
    *   { "channel": number, "timeoutMs"?: number }
+   * Действие:
+   *   Выдача товара с контролем падения по фотодатчику.
    */
   router.post(
     '/vend/drop-check',
@@ -226,10 +320,15 @@ export function createVendingHttpApp({
     }),
   );
 
-  /* ========================= ПРОВЕРКА / ОПРОС КАНАЛОВ ===================== */
+  /* ======================================================================== */
+  /*                          КАНАЛЫ: ПРОВЕРКА/ОПРОС                          */
+  /* ======================================================================== */
 
   /**
    * GET /channels/:channel/exists?timeoutMs=...
+   *
+   * Действие:
+   *   Проверяет, существует ли физически указанный канал.
    */
   router.get(
     '/channels/:channel/exists',
@@ -256,7 +355,17 @@ export function createVendingHttpApp({
   /**
    * GET /channels/poll?maxChannel=60&delayMs=50&timeoutMs=300
    *
-   * Возвращает массив с результатом по каждому каналу.
+   * Действие:
+   *   Опрос каналов от 1 до maxChannel с задержкой между запросами.
+   * Ответ:
+   *   [
+   *     {
+   *       "channel": number,
+   *       "exists": boolean,
+   *       "status": "ok" | "controllerError" | "timeout" | "protocolError",
+   *       "error": { code, message, details? } | null
+   *     }, ...
+   *   ]
    */
   router.get(
     '/channels/poll',
@@ -286,8 +395,6 @@ export function createVendingHttpApp({
           channel: r.channel,
           exists: r.exists,
           status: r.status,
-          // Ошибку (если есть) сводим к "плоскому" виду,
-          // чтобы не тащить туда Buffer'ы и прочее.
           error: r.error
             ? {
                 code:
@@ -306,10 +413,17 @@ export function createVendingHttpApp({
     }),
   );
 
-  /* ======================== ДИАГНОСТИКА / САМТЕСТ ======================== */
+  /* ======================================================================== */
+  /*                          ДИАГНОСТИКА / САМТЕСТ                           */
+  /* ======================================================================== */
 
   /**
    * POST /self-test
+   *
+   * Действие:
+   *   Запускает самотест контроллера.
+   * Ответ:
+   *   { "ok": boolean, "rawHex": string }
    */
   router.post(
     '/self-test',
@@ -332,6 +446,9 @@ export function createVendingHttpApp({
 
   /**
    * POST /reset-all
+   *
+   * Действие:
+   *   Один оборот всех каналов (сервисная операция).
    */
   router.post(
     '/reset-all',
@@ -352,11 +469,242 @@ export function createVendingHttpApp({
     }),
   );
 
-  /* ============================ ТЕМПЕРАТУРА ============================== */
+  /**
+   * POST /repeat-last-reply
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Запрашивает повтор последнего ответа контроллера (без повторения действия).
+   */
+  router.post(
+    '/repeat-last-reply',
+    asyncRoute(async (req, res) => {
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.repeatLastReply(
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /* ======================================================================== */
+  /*                   ТИПЫ КАНАЛОВ / ОДИНОЧНЫЕ / ДВОЙНЫЕ                     */
+  /* ======================================================================== */
 
   /**
-   * GET /temperature
-   * Параметр timeoutMs можно передать как query.
+   * POST /channels/:channel/type/belt
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает тип канала как ленточный.
+   */
+  router.post(
+    '/channels/:channel/type/belt',
+    asyncRoute(async (req, res) => {
+      const channel = Number(req.params.channel);
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.setChannelTypeBelt(
+        channel,
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /**
+   * POST /channels/:channel/type/spring
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает тип канала как пружинный.
+   */
+  router.post(
+    '/channels/:channel/type/spring',
+    asyncRoute(async (req, res) => {
+      const channel = Number(req.params.channel);
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.setChannelTypeSpring(
+        channel,
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /**
+   * POST /channels/type/all/spring
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Переводит все каналы в тип пружинные.
+   */
+  router.post(
+    '/channels/type/all/spring',
+    asyncRoute(async (req, res) => {
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.setAllSpring(
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /**
+   * POST /channels/type/all/belt
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Переводит все каналы в тип ленточные.
+   */
+  router.post(
+    '/channels/type/all/belt',
+    asyncRoute(async (req, res) => {
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.setAllBelt(
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /**
+   * POST /channels/:channel/mode/single
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Делает канал одиночным.
+   */
+  router.post(
+    '/channels/:channel/mode/single',
+    asyncRoute(async (req, res) => {
+      const channel = Number(req.params.channel);
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.makeSingle(
+        channel,
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /**
+   * POST /channels/:channel/mode/double
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Объединяет два соседних канала (channel и channel+1) в двойной.
+   */
+  router.post(
+    '/channels/:channel/mode/double',
+    asyncRoute(async (req, res) => {
+      const channel = Number(req.params.channel);
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.makeDouble(
+        channel,
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /**
+   * POST /channels/mode/all/single
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Все каналы делает одиночными.
+   */
+  router.post(
+    '/channels/mode/all/single',
+    asyncRoute(async (req, res) => {
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.makeAllSingle(
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /* ======================================================================== */
+  /*                          ТЕМПЕРАТУРА / ХОЛОДИЛЬНИК                       */
+  /* ======================================================================== */
+
+  /**
+   * GET /temperature?timeoutMs=...
+   *
+   * Действие:
+   *   Читает текущую температуру шкафа.
    */
   router.get(
     '/temperature',
@@ -380,8 +728,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /temp/control
+   *
    * Тело:
    *   { "enabled": boolean, "timeoutMs"?: number }
+   * Действие:
+   *   Включает/выключает термоконтроль.
    */
   router.post(
     '/temp/control',
@@ -405,8 +756,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /temp/mode
+   *
    * Тело:
    *   { "mode": "cool" | "heat", "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает режим термоконтроля (охлаждение/нагрев).
    */
   router.post(
     '/temp/mode',
@@ -430,8 +784,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /temp/setpoint
+   *
    * Тело:
    *   { "celsius": number, "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает целевую температуру (уставку).
    */
   router.post(
     '/temp/setpoint',
@@ -455,8 +812,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /temp/hysteresis
+   *
    * Тело:
    *   { "deltaC": number, "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает гистерезис термоконтроля.
    */
   router.post(
     '/temp/hysteresis',
@@ -480,8 +840,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /temp/compensation
+   *
    * Тело:
    *   { "celsius": number, "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает температурную компенсацию.
    */
   router.post(
     '/temp/compensation',
@@ -505,8 +868,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /temp/defrost
+   *
    * Тело:
    *   { "minutes": number, "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает длительность дефроста (разморозки).
    */
   router.post(
     '/temp/defrost',
@@ -530,8 +896,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /temp/compressor-run
+   *
    * Тело:
    *   { "minutes": number, "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает максимальное непрерывное время работы компрессора.
    */
   router.post(
     '/temp/compressor-run',
@@ -555,8 +924,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /temp/fan-idle-off
+   *
    * Тело:
    *   { "minutes": number, "timeoutMs"?: number }
+   * Действие:
+   *   Устанавливает задержку отключения вентилятора по простою.
    */
   router.post(
     '/temp/fan-idle-off',
@@ -578,10 +950,43 @@ export function createVendingHttpApp({
     }),
   );
 
-  /* =============================== ДВЕРЬ/СВЕТ/ЗВУК ======================== */
+  /**
+   * POST /glass-heater
+   *
+   * Тело:
+   *   { "on": boolean, "timeoutMs"?: number }
+   * Действие:
+   *   Включает/выключает обогрев стекла.
+   */
+  router.post(
+    '/glass-heater',
+    asyncRoute(async (req, res) => {
+      const { on, timeoutMs } = req.body || {};
+
+      const result = await controller.setGlassHeater(
+        Boolean(on),
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /* ======================================================================== */
+  /*                       ДВЕРЬ / СВЕТ / ЗВУК / АКСЕЛЕРОМЕТР                 */
+  /* ======================================================================== */
 
   /**
-   * GET /door
+   * GET /door?timeoutMs=...
+   *
+   * Действие:
+   *   Читает состояние двери ('open' / 'closed').
    */
   router.get(
     '/door',
@@ -596,7 +1001,7 @@ export function createVendingHttpApp({
       res.json({
         success: true,
         data: {
-          state: result.state, // 'open' | 'closed'
+          state: result.state,
           rawHex: result.raw.toString('hex'),
         },
       });
@@ -605,6 +1010,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /door/open
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Открывает дверь (дополнительная команда).
    */
   router.post(
     '/door/open',
@@ -627,6 +1037,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /door/unlock
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Разблокирует дверь выдачи.
    */
   router.post(
     '/door/unlock',
@@ -649,8 +1064,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /lighting
+   *
    * Тело:
    *   { "on": boolean, "timeoutMs"?: number }
+   * Действие:
+   *   Включает/выключает подсветку витрины.
    */
   router.post(
     '/lighting',
@@ -674,8 +1092,11 @@ export function createVendingHttpApp({
 
   /**
    * POST /buzzer
+   *
    * Тело:
    *   { "on": boolean, "timeoutMs"?: number }
+   * Действие:
+   *   Включает/выключает зуммер.
    */
   router.post(
     '/buzzer',
@@ -697,11 +1118,40 @@ export function createVendingHttpApp({
     }),
   );
 
-  /* ========================== МОНТАЖ ROUTER И ОБРАБОТКА ОШИБОК ============ */
+  /**
+   * POST /accelerometer/enable
+   *
+   * Тело:
+   *   { "timeoutMs"?: number }
+   * Действие:
+   *   Включает акселерометр (если поддерживается железом).
+   */
+  router.post(
+    '/accelerometer/enable',
+    asyncRoute(async (req, res) => {
+      const { timeoutMs } = req.body || {};
+
+      const result = await controller.enableAccelerometer(
+        timeoutMs !== undefined ? Number(timeoutMs) : undefined,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ok: result.ok,
+          rawHex: result.raw.toString('hex'),
+        },
+      });
+    }),
+  );
+
+  /* ======================================================================== */
+  /*                     МОНТАЖ ROUTER И ОБРАБОТКА ОШИБОК                     */
+  /* ======================================================================== */
 
   app.use(basePath, router);
 
-  // Централизованный обработчик ошибок всех asyncRoute
+  // Централизованный обработчик ошибок
   app.use((err, _req, res, _next) => {
     logger({
       type: 'http-error',
@@ -726,24 +1176,20 @@ export function createVendingHttpApp({
  * Утилита "всё-в-одном": создаёт контроллер, открывает UART-порт,
  * поднимает HTTP-сервер и возвращает ссылки на объекты.
  *
- * Удобно использовать для быстрого запуска демо/сервиса:
- *
- *   node vending-http-api.mjs
- *
- * или импортировать и вызвать програмно.
+ * Удобно как из кода, так и для pm2.
  *
  * @param {object} options
- * @param {string} options.portPath - путь к UART-порту (COM3, /dev/ttyS0 и т.п.)
- * @param {number} [options.baudRate=9600] - скорость порта
- * @param {number} [options.httpPort=3001] - порт HTTP-сервера
- * @param {string} [options.basePath='/api/v1'] - базовый путь API
- * @param {(logObj:any) => void} [options.logger] - логгер (по умолчанию console.log)
+ * @param {string} options.portPath - путь к UART-порту
+ * @param {number} [options.baudRate=9600]
+ * @param {number} [options.httpPort=3000]
+ * @param {string} [options.basePath='/api/v1']
+ * @param {(logObj:any) => void} [options.logger]
  * @returns {Promise<{ app: import('express').Express, server: import('http').Server, controller: VendingController }>}
  */
 export async function startVendingHttpServer({
   portPath,
   baudRate = 9600,
-  httpPort = 3001,
+  httpPort = 3000,
   basePath = '/api/v1',
   logger = console.log,
 } = {}) {
@@ -780,25 +1226,56 @@ export async function startVendingHttpServer({
 }
 
 /* ========================================================================== */
-/*                 НЕОБЯЗАТЕЛЬНЫЙ АВТОЗАПУСК ПРИ ПРЯМОМ ЗАПУСКЕ              */
+/*                 АВТОЗАПУСК ПРИ ПРЯМОМ ЗАПУСКЕ (УДОБНО ДЛЯ PM2)            */
 /* ========================================================================== */
 
 /**
- * Если файл запущен напрямую командой:
- *   node vending-http-api.mjs /dev/ttyUSB0 3001
- * или:
- *   node vending-http-api.mjs COM3 3001
- * — автоматически стартуем HTTP-сервер.
+ * При запуске напрямую:
+ *   node vending-http-api.mjs
+ *
+ * Можно настроить через env-переменные (идеально для pm2):
+ *   VENDING_PORT_PATH=/dev/ttyUSB0
+ *   VENDING_HTTP_PORT=3000
+ *   VENDING_BAUD_RATE=9600
+ *   VENDING_BASE_PATH=/api/v1
+ *
+ * Пример ecosystem.config.cjs:
+ *
+ *   module.exports = {
+ *     apps: [
+ *       {
+ *         name: 'vending-http-api',
+ *         script: './vending-http-api.mjs',
+ *         interpreter: 'node',
+ *         env: {
+ *           VENDING_PORT_PATH: '/dev/ttyUSB0',
+ *           VENDING_HTTP_PORT: 3000,
+ *           VENDING_BAUD_RATE: 9600,
+ *           VENDING_BASE_PATH: '/api/v1',
+ *           NODE_ENV: 'production',
+ *         },
+ *       },
+ *     ],
+ *   };
  */
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const portPath = process.argv[2] || '/dev/ttyS3';
-  const httpPort = process.argv[3] ? Number(process.argv[3]) : 3001;
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  const portPath =
+    process.env.VENDING_PORT_PATH ||
+    process.argv[2] ||
+    '/dev/ttyUSB0';
 
-  // Простейший логгер
+  const httpPort = Number(
+    process.env.VENDING_HTTP_PORT || process.argv[3] || 3000,
+  );
+
+  const baudRate = Number(
+    process.env.VENDING_BAUD_RATE || 9600,
+  );
+
+  const basePath =
+    process.env.VENDING_BASE_PATH || '/api/v1';
+
   const logger = (entry) => {
-    // Можно заменить на более структурированный лог
-    // или прокинуть в winston/pino.
-    // Здесь — просто консоль.
     // eslint-disable-next-line no-console
     console.log(
       `[${new Date().toISOString()}]`,
@@ -806,14 +1283,43 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     );
   };
 
-  // Запускаем без await, но обрабатываем возможную ошибку запуска.
+  let serverRef = null;
+  let controllerRef = null;
+
   startVendingHttpServer({
     portPath,
     httpPort,
+    baudRate,
+    basePath,
     logger,
-  }).catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error('Failed to start Vending HTTP API:', err);
-    process.exit(1);
-  });
+  })
+    .then(({ server, controller }) => {
+      serverRef = server;
+      controllerRef = controller;
+    })
+    .catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('Failed to start Vending HTTP API:', err);
+      process.exit(1);
+    });
+
+  const gracefulShutdown = async (signal) => {
+    logger({ type: 'info', message: `Received ${signal}, shutting down...` });
+    try {
+      if (serverRef) {
+        await new Promise((resolve) => serverRef.close(resolve));
+      }
+      if (controllerRef) {
+        await controllerRef.close();
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Error during shutdown:', err);
+    } finally {
+      process.exit(0);
+    }
+  };
+
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 }

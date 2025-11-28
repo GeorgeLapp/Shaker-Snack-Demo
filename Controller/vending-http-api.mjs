@@ -1265,7 +1265,7 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
     '/dev/ttyUSB0';
 
   const httpPort = Number(
-    process.env.VENDING_HTTP_PORT || process.argv[3] || 3000,
+    process.env.VENDING_HTTP_PORT || process.argv[3] || 5000,
   );
 
   const baudRate = Number(

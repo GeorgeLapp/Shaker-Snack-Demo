@@ -1,28 +1,22 @@
 // bff-server.mjs
-// Express BFF для сервисного меню. Проксирует действия фронтенда в сигналы FSM и возвращает FsmReply.
-// Требования: Node.js 20+, "type": "module" в package.json, установлен express.
-// Настройте путь к FSM по вашему проекту.
+// Express BFF (Unified v3.0)
 
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
-
-// Импорт конечного автомата (обновите путь при интеграции)
-import { ServiceMenuFSM } from './fsm-service-menu.js'; // ← убедитесь, что файл и экспорт совпадают
+import { ServiceMenuFSM, Signals } from './fsm-service-menu.js';
 
 // ---------------- Конфигурация ----------------
 const PORT = process.env.BFF_PORT || 3001;
 const BACKEND_BASE_URL = process.env.SVC_BACKEND_URL || 'http://localhost:8080/api/v1';
-const SESSION_INACTIVITY_MS = Number(process.env.SESSION_INACTIVITY_MS || 180000); // 3 min
-const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS || 15000);
 
 // ---------------- Инициализация FSM ----------------
 const fsm = new ServiceMenuFSM({
   backend: {
     baseUrl: BACKEND_BASE_URL,
-    requestTimeoutMs: REQUEST_TIMEOUT_MS,
+    requestTimeoutMs: 15000,
   },
-  sessionInactivityMs: SESSION_INACTIVITY_MS,
+  sessionInactivityMs: 180000,
 });
 
 // ---------------- Инициализация Express ----------------
@@ -31,82 +25,79 @@ app.use(cors());
 app.use(express.json({ limit: '512kb' }));
 app.use(morgan('dev'));
 
-// Хелпер: единая обёртка маршрутов, чтобы не дублировать try/catch
 function bindRoute(method, path, signal) {
   app[method](path, async (req, res) => {
     try {
       const payload = req.body ?? {};
+      // Для GET запросов payload пустой или query, но FSM принимает объект
+      // В FSM handle мы добавили кейсы, которые не требуют payload для простых GET
       const reply = await fsm.handle(signal, payload);
       res.json(reply);
     } catch (err) {
-      // Фоллбэк на случай непойманных исключений
       console.error(`[BFF] Unhandled error for ${path}:`, err);
-      res.status(500).json({
-        state: 'Error',
-        view: {
-          screen: 'Error',
-          message: 'BFF internal error',
-        },
-        meta: {
-          cause: String(err?.message || err),
-          path,
-        },
-      });
+      res.status(500).json({ state: 'Error', meta: { cause: String(err) } });
     }
   });
 }
 
-// ---------------- Маршруты BFF (Frontend → BFF) ----------------
-bindRoute('post', '/bff/ui/open-settings', 'UI.OpenSettings');
-bindRoute('post', '/bff/auth/login', 'Auth.SubmitPin');
-bindRoute('post', '/bff/ui/nav/cells-stocks', 'UI.Navigate.CellsStocks');
-bindRoute('post', '/bff/ui/nav/cells-capacity', 'UI.Navigate.CellsCapacity');
-bindRoute('post', '/bff/ui/nav/cells-prices', 'UI.Navigate.CellsPrices');
-bindRoute('post', '/bff/ui/nav/cells-products', 'UI.Navigate.CellsProducts');
-bindRoute('post', '/bff/ui/nav/cells-config', 'UI.Navigate.CellsConfig');
-bindRoute('post', '/bff/ui/nav/diagnostics', 'UI.Navigate.DiagnosticsTest');
-bindRoute('post', '/bff/ui/nav/logs', 'UI.Navigate.Logs');
+// ---------------- Маршруты BFF ----------------
 
-bindRoute('post', '/bff/cells/stock', 'Cells.EditStock');
-bindRoute('post', '/bff/cells/fill-row', 'Cells.FillRow');
-bindRoute('post', '/bff/cells/capacity/row', 'Cells.SetRowCapacity');
-bindRoute('post', '/bff/cells/capacity/cell', 'Cells.SetCellCapacity');
-bindRoute('post', '/bff/cells/price/row', 'Cells.SetRowPrice');
-bindRoute('post', '/bff/cells/price/cell', 'Cells.SetCellPrice');
+// UI Navigation
+bindRoute('post', '/bff/ui/open-settings', Signals.AppStart);
+bindRoute('post', '/bff/ui/nav/cells-stocks', Signals.NavCellsStocks);
+bindRoute('post', '/bff/ui/nav/cells-capacity', Signals.NavCellsCapacity);
+bindRoute('post', '/bff/ui/nav/cells-prices', Signals.NavCellsPrices);
+bindRoute('post', '/bff/ui/nav/cells-products', Signals.NavCellsProducts);
+bindRoute('post', '/bff/ui/nav/cells-config', Signals.NavCellsConfig);
+bindRoute('post', '/bff/ui/nav/diagnostics', Signals.NavDiagTest);
+bindRoute('post', '/bff/ui/nav/logs', Signals.NavLogs);
+bindRoute('post', '/bff/ui/back', Signals.Back);
+bindRoute('post', '/bff/ui/retry', Signals.Retry);
 
-bindRoute('post', '/bff/products/open-list', 'Cells.OpenAssignProduct');
-bindRoute('post', '/bff/products/assign', 'Products.Assign');
-bindRoute('post', '/bff/products/assign-row', 'Products.AssignRow');
+// Auth
+bindRoute('post', '/bff/auth/login', Signals.SubmitPin);
+bindRoute('post', '/bff/auth/logout', Signals.Logout);
+// NEW v3: Получение профиля (например, для отображения "Engineer" в хедере)
+bindRoute('post', '/bff/auth/me', Signals.AuthGetProfile); 
 
-bindRoute('post', '/bff/cells/status', 'Cells.SetStatus');
-bindRoute('post', '/bff/cells/merge', 'Cells.Merge');
-bindRoute('post', '/bff/cells/type', 'Cells.SetType');
+// Cells Actions
+bindRoute('post', '/bff/cells/stock', Signals.CellsEditStock);
+bindRoute('post', '/bff/cells/fill-row', Signals.CellsFillRow);
+// ... Capacity/Price bindings assumed mapped to Signals.* ...
+bindRoute('post', '/bff/cells/status', Signals.CellsSetStatus);
+bindRoute('post', '/bff/cells/merge', Signals.CellsMerge);
+bindRoute('post', '/bff/cells/split', Signals.CellsSplit);
+bindRoute('post', '/bff/cells/type', Signals.CellsSetType);
 
-bindRoute('post', '/bff/diagnostics/run', 'Diagnostics.RunTest');
-bindRoute('post', '/bff/diagnostics/rerun', 'UI.Rerun');
+// Products
+bindRoute('post', '/bff/products/open-list', Signals.CellsOpenAssignProduct);
+bindRoute('post', '/bff/products/assign', Signals.ProductsAssign);
+bindRoute('post', '/bff/products/assign-row', Signals.ProductsAssignRow);
 
-bindRoute('post', '/bff/logs/search', 'Logs.Search');
-bindRoute('post', '/bff/logs/full', 'Logs.ToggleFull');
+// Diagnostics & Logs
+bindRoute('post', '/bff/diagnostics/run', Signals.DiagRunTest);
+bindRoute('post', '/bff/diagnostics/rerun', Signals.Rerun);
+bindRoute('post', '/bff/logs/search', Signals.LogsSearch);
+bindRoute('post', '/bff/logs/full', Signals.LogsToggleFull);
+// NEW v3: Info
+bindRoute('post', '/bff/diagnostics/info', Signals.DiagGetInfo); 
 
-bindRoute('post', '/bff/ui/back', 'UI.Back');
-bindRoute('post', '/bff/ui/retry', 'UI.Retry');
-bindRoute('post', '/bff/auth/logout', 'Auth.Logout');
+// Maintenance (NEW v3)
+// Обратите внимание: фронт все еще шлет POST на BFF, даже если это GET данных,
+// так как BFF проксирует команды. Но можно поддержать и GET в bindRoute, если нужно.
+bindRoute('post', '/bff/maintenance/state', Signals.MaintGetState);
+bindRoute('post', '/bff/maintenance/self-test', Signals.MaintSelfTest);
+bindRoute('post', '/bff/maintenance/calibration', Signals.MaintCalibration);
 
-// Healthcheck
+
+// Health
 app.get('/bff/health', (_req, res) => {
-  res.json({ ok: true, fsmState: fsm.state ?? 'unknown' });
+  res.json({ ok: true, fsmState: fsm.state });
 });
-/*
-app.listen(PORT, () => {
-  console.log(`[BFF] Service Menu BFF listening on http://localhost:${PORT}`);
-  console.log(`[BFF] Backend base URL: ${BACKEND_BASE_URL}`);
-});
-*/
-// Экспортируем app для тестов. В тестовом окружении порт не слушаем.
+
 export { app, fsm };
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`[BFF] Service Menu BFF listening on http://localhost:${PORT}`);
-    console.log(`[BFF] Backend base URL: ${BACKEND_BASE_URL}`);
+    console.log(`[BFF] v3.0 listening on http://localhost:${PORT}`);
   });
 }

@@ -15,8 +15,10 @@ const fetchImpl =
 
 // Базовый URL HTTP-сервиса телеметрии (telemetry-api.mjs)
 // Например, если там HTTP_PORT = 3001, то: http://localhost:3001
+// Базовый URL HTTP-API телеметрии (telemetry-api.mjs).
+// По умолчанию совпадает с HTTP_PORT из telemetry-config.mjs (3002).
 const TELEMETRY_API_BASE_URL =
-  process.env.TELEMETRY_API_BASE_URL || 'http://localhost:3001';
+  process.env.TELEMETRY_API_BASE_URL || 'http://localhost:3002';
 
 /**
  * Небольшой helper для запросов к телеметрии.

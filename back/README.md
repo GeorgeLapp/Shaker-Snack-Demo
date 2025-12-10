@@ -23,7 +23,13 @@ Environment variables:
 
 ## Data source
 
-Product information is loaded from the `goods.db` SQLite database that ships with the Telemetry module. The backend joins `matrix_cell_config`, `catalog_product`, and `catalog_brand` to produce the matrix: each enabled cell inherits its row number, price (converted from `price_minor`), absolute `img_url`, brand name, and nutritional data from the catalog tables. Updating `goods.db` immediately affects `/api/product-matrix` responses.
+By default the backend reads product data indirectly via the Telemetry HTTP API instead of talking to SQLite directly:
+
+- Telemetry HTTP server (`Telemetry/new/telemetry-api.mjs`) listens on port `3002` (or `TELEMETRY_HTTP_PORT`).
+- The backend calls Telemetry at `TELEMETRY_API_BASE_URL` (defaults to `http://localhost:3002`) using `/api/matrix` and `/api/catalog`.
+- Telemetry, in turn, reads from the `goods.db` SQLite database that ships with this repo and exposes the joined view of `matrix_cell_config`, `catalog_product`, and `catalog_brand`.
+
+When you keep the defaults, it is enough to have `Telemetry/goods.db` present and to run Telemetry alongside the backend.
 
 ## Static assets
 

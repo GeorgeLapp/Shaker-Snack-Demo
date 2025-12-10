@@ -205,9 +205,9 @@ POST /api/v1/vend/simple
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/vend/simple \
+curl -X POST http://localhost:5000/api/v1/vend/simple \
   -H "Content-Type: application/json" \
-  -d '{"channel": 5, "timeoutMs": 10000}'
+  -d '{"channel": 51, "timeoutMs": 10000}'
 ```
 
 ---
@@ -254,9 +254,9 @@ POST /api/v1/vend/drop-check
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/vend/drop-check \
+curl -X POST http://localhost:5000/api/v1/vend/drop-check \
   -H "Content-Type: application/json" \
-  -d '{"channel": 5, "timeoutMs": 10000}'
+  -d '{"channel": 52, "timeoutMs": 15000}'
 ```
 
 ---
@@ -297,7 +297,7 @@ GET /api/v1/channels/5/exists?timeoutMs=300
 **Пример curl:**
 
 ```bash
-curl "http://localhost:3000/api/v1/channels/5/exists?timeoutMs=300"
+curl "http://localhost:5000/api/v1/channels/2/exists?timeoutMs=300"
 ```
 
 ---
@@ -365,7 +365,7 @@ Query-параметры:
 **Пример curl:**
 
 ```bash
-curl "http://localhost:3000/api/v1/channels/poll?maxChannel=20&delayMs=100&timeoutMs=300"
+curl "http://localhost:5000/api/v1/channels/poll?maxChannel=60&delayMs=100&timeoutMs=1000"
 ```
 
 ---
@@ -408,7 +408,7 @@ POST /api/v1/self-test
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/self-test \
+curl -X POST http://localhost:5000/api/v1/self-test \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -443,7 +443,7 @@ curl -X POST http://localhost:3000/api/v1/self-test \
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/reset-all \
+curl -X POST http://localhost:5000/api/v1/reset-all \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 10000}'
 ```
@@ -477,7 +477,7 @@ curl -X POST http://localhost:3000/api/v1/reset-all \
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/repeat-last-reply \
+curl -X POST http://localhost:5000/api/v1/repeat-last-reply \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -627,7 +627,7 @@ POST /api/v1/channels/5/mode/double
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/channels/5/mode/double \
+curl -X POST http://localhost:5000/api/v1/channels/41/mode/double \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -640,7 +640,7 @@ curl -X POST http://localhost:3000/api/v1/channels/5/mode/double \
 Сделать **все каналы одиночными**.
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/channels/mode/all/single \
+curl -X POST http://localhost:5000/api/v1/channels/mode/all/single \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -968,9 +968,9 @@ curl -X POST http://localhost:3000/api/v1/door/unlock \
 **Пример включения:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/lighting \
+curl -X POST http://localhost:5000/api/v1/lighting \
   -H "Content-Type: application/json" \
-  -d '{"on": true, "timeoutMs": 300}'
+  -d '{"on": false, "timeoutMs": 300}'
 ```
 
 **Пример выключения:**

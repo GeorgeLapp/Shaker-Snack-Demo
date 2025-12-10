@@ -1,14 +1,14 @@
-/**
+﻿/**
  * @file fsm-service-menu.js
  * @description
- * ES-модуль конечного автомата (Unified v3.0).
- * Включает расширенный BackendClient для поддержки роли, диагностики и maintenance.
+ * ES-РјРѕРґСѓР»СЊ РєРѕРЅРµС‡РЅРѕРіРѕ Р°РІС‚РѕРјР°С‚Р° (Unified v3.0).
+ * Р’РєР»СЋС‡Р°РµС‚ СЂР°СЃС€РёСЂРµРЅРЅС‹Р№ BackendClient РґР»СЏ РїРѕРґРґРµСЂР¶РєРё СЂРѕР»Рё, РґРёР°РіРЅРѕСЃС‚РёРєРё Рё maintenance.
  */
 
 // ... (JSDoc types definitions as before, extended implicitly) ...
 
 /**
- * Универсальный клиент бэкенда.
+ * РЈРЅРёРІРµСЂСЃР°Р»СЊРЅС‹Р№ РєР»РёРµРЅС‚ Р±СЌРєРµРЅРґР°.
  */
 export class ServiceMenuBackendClient {
   constructor(cfg) {
@@ -50,7 +50,7 @@ export class ServiceMenuBackendClient {
   // ----------- CELLS -----------
   async getCells(token) { return this._fetchJson('/cells', { token }); }
   async splitCells(token, cellIds) {
-    // cellIds - массив ID ячеек, которые нужно "разлепить"
+    // cellIds - РјР°СЃСЃРёРІ ID СЏС‡РµРµРє, РєРѕС‚РѕСЂС‹Рµ РЅСѓР¶РЅРѕ "СЂР°Р·Р»РµРїРёС‚СЊ"
     return this._fetchJson('/cells/split', { method: 'POST', token, body: JSON.stringify({ cellIds }) });
   }
   async fillRowStock(token, row) {
@@ -74,7 +74,7 @@ export class ServiceMenuBackendClient {
   }
 
   async getProducts(token, params = {}) {
-    // Поддержка поиска и пагинации
+    // РџРѕРґРґРµСЂР¶РєР° РїРѕРёСЃРєР° Рё РїР°РіРёРЅР°С†РёРё
     const q = new URLSearchParams(params).toString();
     return this._fetchJson(`/products?${q}`, { token });
   }
@@ -94,6 +94,31 @@ export class ServiceMenuBackendClient {
   // ----------- DIAGNOSTICS & INFO -----------
   async runDiagnostics(token, cellIds) {
     return this._fetchJson('/diagnostics/test-cells', { method: 'POST', token, body: JSON.stringify({ cellIds }) });
+  }
+
+  async getDiagCellsView(token) {
+    return this._fetchJson('/diagnostics/test-cells', { token });
+  }
+
+  async startDiagCalibration(token) {
+    return this._fetchJson('/diagnostics/test-cells/calibration', { method: 'POST', token });
+  }
+
+  async pollDiagCalibration(token, opId) {
+    const q = new URLSearchParams();
+    if (opId) q.set('opId', opId);
+    return this._fetchJson(`/diagnostics/test-cells/calibration?${q.toString()}`, { token });
+  }
+
+  async startDiagCellsTest(token, cellIds) {
+    const body = Array.isArray(cellIds) && cellIds.length > 0 ? { cellIds } : {};
+    return this._fetchJson('/diagnostics/test-cells/test', { method: 'POST', token, body: JSON.stringify(body) });
+  }
+
+  async pollDiagCellsTest(token, opId) {
+    const q = new URLSearchParams();
+    if (opId) q.set('opId', opId);
+    return this._fetchJson(`/diagnostics/test-cells/test?${q.toString()}`, { token });
   }
 
   async getSystemInfo(token) {
@@ -122,7 +147,7 @@ export class ServiceMenuBackendClient {
   }
 }
 
-export const Signals = {
+  export const Signals = {
   AppStart: 'UI.OpenSettings',
   SubmitPin: 'Auth.SubmitPin',
   TryAgain: 'Auth.TryAgain',
@@ -149,8 +174,13 @@ export const Signals = {
   CellsMerge: 'Cells.Merge',
   CellsSplit: 'Cells.Split',
   CellsSetType: 'Cells.SetType',
-  // Diag
-  DiagRunTest: 'Diagnostics.RunTest',
+    // Diag
+    DiagRunTest: 'Diagnostics.RunTest',
+    DiagLoadCells: 'Diagnostics.LoadCells',
+    DiagStartCalibration: 'Diagnostics.StartCalibration',
+    DiagPollCalibration: 'Diagnostics.PollCalibration',
+    DiagStartCellsTest: 'Diagnostics.StartCellsTest',
+    DiagPollCellsTest: 'Diagnostics.PollCellsTest',
   Rerun: 'UI.Rerun',
   LogsSearch: 'Logs.Search',
   LogsToggleFull: 'Logs.ToggleFull',
@@ -192,7 +222,7 @@ export class ServiceMenuFSM {
 
   async handle(event, payload) {
     // ---- READ-ONLY PROXY SIGNALS (Stateless) ----
-    // Эти сигналы не меняют состояние автомата, но требуют токена
+    // Р­С‚Рё СЃРёРіРЅР°Р»С‹ РЅРµ РјРµРЅСЏСЋС‚ СЃРѕСЃС‚РѕСЏРЅРёРµ Р°РІС‚РѕРјР°С‚Р°, РЅРѕ С‚СЂРµР±СѓСЋС‚ С‚РѕРєРµРЅР°
     if ([Signals.AuthGetProfile, Signals.DiagGetInfo, Signals.MaintGetState].includes(event)) {
       if (!this.ctx.token) return { state: this.state, view: {}, meta: { error: "No token" } };
 
@@ -214,7 +244,7 @@ export class ServiceMenuFSM {
         const res = await this.backend.login(pin);
         if (res.status === 200 && res.body?.accessToken) {
           this.ctx.token = res.body.accessToken;
-          // Сохраняем роль в контексте, если нужно
+          // РЎРѕС…СЂР°РЅСЏРµРј СЂРѕР»СЊ РІ РєРѕРЅС‚РµРєСЃС‚Рµ, РµСЃР»Рё РЅСѓР¶РЅРѕ
           this.ctx.role = res.body.role;
           return this._goto('Dashboard', { screen: 'Dashboard', message: `Role: ${this.ctx.role}` });
         }
@@ -224,7 +254,7 @@ export class ServiceMenuFSM {
       case Signals.TryAgain: return this._goto('AuthInput', { screen: 'AuthInput' });
       case Signals.Logout: return this._goto('Idle', { screen: 'AuthInput' });
 
-      // Навигация
+      // РќР°РІРёРіР°С†РёСЏ
       case Signals.NavCellsStocks:
       case Signals.NavCellsCapacity:
       case Signals.NavCellsPrices:
@@ -232,7 +262,22 @@ export class ServiceMenuFSM {
       case Signals.NavCellsConfig:
         return this._loadCellsList(event);
 
-      case Signals.NavDiagTest: return this._goto('DiagnosticsTestInput', { screen: 'Diagnostics/TestInput' });
+      case Signals.NavDiagTest:
+        this._requireToken();
+        // РџСЂРё РІС…РѕРґРµ РЅР° СЌРєСЂР°РЅ С‚РµСЃС‚Р° СЏС‡РµРµРє СЃСЂР°Р·Сѓ РїРѕРґРіСЂСѓР¶Р°РµРј Р»РѕРіРёС‡РµСЃРєРёР№ РІРёРґ СЏС‡РµРµРє
+        {
+          const res = await this.backend.getDiagCellsView(this.ctx.token);
+          if (res.status === 200) {
+            return this._goto('DiagnosticsTestInput', {
+              screen: 'Diagnostics/TestInput',
+              cells: res.body || [],
+            });
+          }
+          if (res.status === 401) {
+            return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+          }
+          return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+        }
       case Signals.NavLogs: return this._loadLogs({ limit: 50 }); // Default limit
 
       // Cells Operations
@@ -308,8 +353,8 @@ export class ServiceMenuFSM {
         const cellsInRow = (this.ctx.cells || []).filter((c) => c.row === row);
         const cellIds = cellsInRow.map((c) => c.id);
 
-        // Если в контексте нет ячеек этой строки — просто вернём текущий список без ошибок,
-        // чтобы UI не падал.
+        // Р•СЃР»Рё РІ РєРѕРЅС‚РµРєСЃС‚Рµ РЅРµС‚ СЏС‡РµРµРє СЌС‚РѕР№ СЃС‚СЂРѕРєРё вЂ” РїСЂРѕСЃС‚Рѕ РІРµСЂРЅС‘Рј С‚РµРєСѓС‰РёР№ СЃРїРёСЃРѕРє Р±РµР· РѕС€РёР±РѕРє,
+        // С‡С‚РѕР±С‹ UI РЅРµ РїР°РґР°Р».
         if (cellIds.length === 0) {
           return this._goto(this.state, {
             screen: `Cells/${this.ctx.cellsMode || 'products'}`,
@@ -334,44 +379,135 @@ export class ServiceMenuFSM {
       }
 
       // Diagnostics
-      case Signals.DiagRunTest:
+      case Signals.DiagRunTest: {
         this._requireToken();
         this.state = 'DiagnosticsTestProcessing';
-        // Запускаем тест и одновременно подтягиваем актуальный список ячеек
-        // для отображения в результатах диагностики.
-        {
-          const requestedIds =
-            Array.isArray(payload?.cellIds) && payload.cellIds.length > 0
-              ? payload.cellIds
-              : (this.ctx.cells || []).map((c) => c.id);
+        const requestedIds =
+          Array.isArray(payload?.cellIds) && payload.cellIds.length > 0
+            ? payload.cellIds
+            : (this.ctx.cells || []).map((c) => c.id);
 
-          const [diagRes, cellsRes] = await Promise.all([
-            this.backend.runDiagnostics(this.ctx.token, requestedIds),
-            this.backend.getCells(this.ctx.token),
-          ]);
+        const [diagRes, cellsRes] = await Promise.all([
+          this.backend.runDiagnostics(this.ctx.token, requestedIds),
+          this.backend.getDiagCellsView(this.ctx.token),
+        ]);
 
-          if (diagRes.status === 200 && cellsRes.status === 200) {
-            const cells = cellsRes.body || [];
-            this.ctx.cells = cells;
-            return this._goto('DiagnosticsTestResults', {
-              screen: 'Diagnostics/Results',
-              results: diagRes.body,
-              cells,
-            });
-          }
-
-          const bad = diagRes.status !== 200 ? diagRes : cellsRes;
-          return this._goto('BackendError', { screen: 'Error' }, { status: bad.status });
+        if (diagRes.status === 200 && cellsRes.status === 200) {
+          const cells = cellsRes.body || [];
+          this.ctx.cells = cells;
+          return this._goto('DiagnosticsTestResults', {
+            screen: 'Diagnostics/Results',
+            results: diagRes.body,
+            cells,
+          });
         }
+
+        const bad = diagRes.status !== 200 ? diagRes : cellsRes;
+        return this._goto('BackendError', { screen: 'Error' }, { status: bad.status });
+      }
+      case Signals.DiagStartCalibration: {
+        this._requireToken();
+        const res = await this.backend.startDiagCalibration(this.ctx.token);
+        if (res.status === 200 || res.status === 202) {
+          return { state: this.state, view: res.body || {}, meta: { status: res.status } };
+        }
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        this.ctx.retryPoint = 'DiagStartCalibration';
+        return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+      }
+      case Signals.DiagPollCalibration: {
+        this._requireToken();
+        const res = await this.backend.pollDiagCalibration(this.ctx.token, payload?.opId);
+        if (res.status === 200) {
+          return { state: this.state, view: res.body || {}, meta: { status: res.status } };
+        }
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        this.ctx.retryPoint = 'DiagPollCalibration';
+        return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+      }
+      case Signals.DiagStartCellsTest: {
+        this._requireToken();
+        const res = await this.backend.startDiagCellsTest(this.ctx.token, payload?.cellIds);
+        if (res.status === 200 || res.status === 202) {
+          return { state: this.state, view: res.body || {}, meta: { status: res.status } };
+        }
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        this.ctx.retryPoint = 'DiagStartCellsTest';
+        return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+      }
+      case Signals.DiagPollCellsTest: {
+        this._requireToken();
+        const res = await this.backend.pollDiagCellsTest(this.ctx.token, payload?.opId);
+        if (res.status === 200) {
+          return { state: this.state, view: res.body || {}, meta: { status: res.status } };
+        }
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        this.ctx.retryPoint = 'DiagPollCellsTest';
+        return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+      }
 
       // Logs
       case Signals.LogsSearch:
         return this._loadLogs({ search: payload.text, limit: 50 });
+      case Signals.CellsMerge: {
+        this._requireToken();
+        const cellIds = Array.isArray(payload?.cellIds) ? payload.cellIds : [];
+        if (cellIds.length < 2) {
+          return this._goto(this.state, {
+            screen: `Cells/${this.ctx.cellsMode || 'config'}`,
+            cells: this.ctx.cells,
+          }, { error: 'At least two cells are required to merge' });
+        }
+
+        const res = await this.backend.mergeCells(this.ctx.token, cellIds);
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        if (res.status !== 200 && res.status !== 204) {
+          this.ctx.retryPoint = 'CellsMergeProcessing';
+          return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+        }
+
+        this.ctx.retryPoint = null;
+        this.ctx.cellsMode = 'config';
+        return this._reloadCells();
+      }
       case Signals.CellsSplit:
         this._requireToken();
-        // Вызываем бэкенд для разделения
-        await this.backend.splitCells(this.ctx.token, payload.cellIds);
-        return this._reloadCells(); // Перезагружаем список, чтобы увидеть изменения
+        const splitRes = await this.backend.splitCells(this.ctx.token, payload.cellIds);
+        if (splitRes.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        if (splitRes.status !== 200 && splitRes.status !== 204) {
+          this.ctx.retryPoint = 'CellsSplitProcessing';
+          return this._goto('BackendError', { screen: 'Error' }, { status: splitRes.status });
+        }
+        this.ctx.retryPoint = null;
+        this.ctx.cellsMode = 'config';
+        return this._reloadCells();
+      case Signals.DiagLoadCells: {
+        this._requireToken();
+        const res = await this.backend.getDiagCellsView(this.ctx.token);
+        if (res.status === 200) {
+          return this._goto('DiagnosticsTestInput', {
+            screen: 'Diagnostics/TestInput',
+            cells: res.body || [],
+          });
+        }
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        this.ctx.retryPoint = 'DiagLoadCells';
+        return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+      }
       // NEW Maintenance Operations
       case Signals.MaintSelfTest:
         this._requireToken();
@@ -428,3 +564,4 @@ export class ServiceMenuFSM {
 }
 
 export default ServiceMenuFSM;
+

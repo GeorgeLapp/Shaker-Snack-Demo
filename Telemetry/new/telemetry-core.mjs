@@ -879,6 +879,9 @@ export class TelemetryCore {
       };
     }
 
+    // Apply changes locally so subsequent reads reflect assigned products immediately
+    await this.db.applyMatrixCellsFromServer(cells);
+
     return {
       success: true,
       message: 'Cell store synced successfully',

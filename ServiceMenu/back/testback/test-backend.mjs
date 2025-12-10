@@ -7,6 +7,8 @@ app.use(express.json());
 
 // ---------------- Telemetry HTTP client ----------------
 
+const MACHINE_CELLS_COUNT = Number(process.env.MACHINE_CELLS_COUNT || 60);
+
 const TELEMETRY_API_BASE_URL =
   (process.env.TELEMETRY_API_BASE_URL || "http://localhost:3002").replace(/\/+$/, "");
 
@@ -84,6 +86,15 @@ async function postTelemetryVolumes(cells) {
     body: cells,
   });
 }
+
+// Special "no product" placeholder (id = 0)
+const NO_PRODUCT = {
+  id: 0,
+  brandName: "-",
+  productName: "Нет товара",
+  imgPath: "/img/products/no-product.png",
+  name: "Нет товара",
+};
 
 // ---------------- In-memory state (Emulated Data) ----------------
 let STATE = {
@@ -228,8 +239,24 @@ async function refreshStateFromTelemetry() {
       fetchTelemetryCatalog().catch(() => []),
     ]);
 
-    STATE.cells = mapTelemetryMatrixRowsToCells(matrix);
-    STATE.products = mapTelemetryCatalogRowsToProducts(catalog);
+    const newCells = mapTelemetryMatrixRowsToCells(matrix);
+    const prevCells = Array.isArray(STATE.cells) ? STATE.cells : [];
+    const prevById = new Map(prevCells.map((c) => [c.id, c]));
+
+    // Preserve master/slave links (mergedTo) while refreshing cells from telemetry
+    STATE.cells = newCells.map((cell) => {
+      const prev = prevById.get(cell.id);
+      if (prev && typeof prev.mergedTo !== "undefined") {
+        return { ...cell, mergedTo: prev.mergedTo };
+      }
+      return cell;
+    });
+
+    const productsFromTelemetry = mapTelemetryCatalogRowsToProducts(catalog);
+    const hasNoProduct = productsFromTelemetry.some((p) => p.id === NO_PRODUCT.id);
+    STATE.products = hasNoProduct
+      ? productsFromTelemetry
+      : [{ ...NO_PRODUCT }, ...productsFromTelemetry];
   } catch (err) {
     console.error("Failed to refresh state from Telemetry:", err.message || err);
   }
@@ -409,9 +436,21 @@ app.post(`${API_PREFIX}/cells/merge`, requireAuth, async (req, res) => {
   if (!Array.isArray(cellIds) || cellIds.length < 2) {
       return res.status(400).json({ error: "Need at least 2 cells to merge" });
   }
+  
+    const normalizedIds = Array.from(
+      new Set(
+        cellIds
+          .map((id) => Number(id))
+          .filter((id) => Number.isInteger(id) && id > 0)
+      )
+    ).sort((a, b) => a - b);
 
-  const masterId = cellIds[0];
-  const slaveIds = cellIds.slice(1);
+    if (normalizedIds.length < 2) {
+        return res.status(400).json({ error: "Need at least 2 valid cells to merge" });
+    }
+  
+    const masterId = normalizedIds[0];
+    const slaveIds = normalizedIds.slice(1);
 
   // 1. Находим Master-ячейку
   const masterIndex = STATE.cells.findIndex(c => c.id === masterId);
@@ -506,6 +545,223 @@ app.post(`${API_PREFIX}/cells/split`, requireAuth, async (req, res) => {
   } else {
       res.json(mapped);
   }
+});
+
+// Diagnostics helpers: logical view & async operations
+
+function calcRowFromCellId(cellId) {
+  const id = Number(cellId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  // 10 cells per row (1..10, 11..20, ...)
+  return Math.floor((id - 1) / 10) + 1;
+}
+
+function buildMotorDtoFromCell(cell) {
+  return {
+    cellId: cell.id,
+    status: cell.status,
+    stock: cell.stock,
+    capacity: cell.capacity,
+    lastError: cell.lastError ?? null,
+    updatedAt: cell.updatedAt ?? null,
+  };
+}
+
+// Logical representation for test-cells screen:
+// always MACHINE_CELLS_COUNT items, master cells with attached slave motors.
+function buildDiagnosticCellsView() {
+  const cellsWithProduct = (STATE.cells || []).map(buildCellDtoWithProduct);
+  const byId = new Map(cellsWithProduct.map((c) => [c.id, c]));
+
+  const slavesByMaster = new Map();
+  for (const cell of cellsWithProduct) {
+    if (cell.mergedTo != null) {
+      const masterId = cell.mergedTo;
+      if (!slavesByMaster.has(masterId)) {
+        slavesByMaster.set(masterId, []);
+      }
+      slavesByMaster.get(masterId).push(cell);
+    }
+  }
+
+  const result = [];
+  const total = MACHINE_CELLS_COUNT;
+
+  for (let logicalId = 1; logicalId <= total; logicalId++) {
+    const master = byId.get(logicalId);
+    const motors = [];
+
+    if (master) {
+      motors.push(buildMotorDtoFromCell(master));
+    }
+
+    const slaves = slavesByMaster.get(logicalId) || [];
+    for (const slave of slaves) {
+      motors.push(buildMotorDtoFromCell(slave));
+    }
+
+    const row = master?.row ?? calcRowFromCellId(logicalId);
+    const productId = master?.productId ?? 0;
+    const productName = master?.productName ?? null;
+
+    result.push({
+      id: logicalId,
+      row,
+      productId,
+      productName,
+      stock: master?.stock ?? 0,
+      capacity: master?.capacity ?? 0,
+      status: master?.status ?? "disabled",
+      lastError: master?.lastError ?? null,
+      updatedAt: master?.updatedAt ?? null,
+      motors,
+    });
+  }
+
+  return result;
+}
+
+let currentCalibrationOp = null;
+let currentTestOp = null;
+
+function createCellsOperation(kind, cellIds) {
+  const normalized = Array.from(
+    new Set(
+      (cellIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )
+  ).sort((a, b) => a - b);
+
+  const op = {
+    id: `${kind}_${Date.now()}`,
+    kind,
+    cellIds: normalized,
+    statusByCell: new Map(),
+    nextIndex: 0,
+    finished: normalized.length === 0,
+  };
+
+  return op;
+}
+
+function advanceOperation(op, chunkSize = 4) {
+  if (!op || op.finished) return;
+
+  const slice = op.cellIds.slice(op.nextIndex, op.nextIndex + chunkSize);
+
+  for (const cellId of slice) {
+    const isError = op.kind === "test" && Math.random() < 0.1;
+    const status = isError ? "ERROR" : "SUCCESS";
+    const message =
+      op.kind === "calibration"
+        ? isError
+          ? "CALIBRATION_FAILED"
+          : "CALIBRATED"
+        : isError
+        ? "MOTOR_JAMMED_OVERCURRENT"
+        : "OK";
+
+    op.statusByCell.set(cellId, {
+      status,
+      message,
+      updatedAt: new Date().toISOString(),
+    });
+
+    STATE.logs.unshift({
+      ts: new Date().toISOString(),
+      level: isError ? "ERROR" : "INFO",
+      msg: `${op.kind === "calibration" ? "Calibration" : "Test"} cell #${cellId}: ${status}`,
+    });
+  }
+
+  op.nextIndex += slice.length;
+  if (op.nextIndex >= op.cellIds.length) {
+    op.finished = true;
+  }
+}
+
+function operationToResponse(op) {
+  if (!op) return null;
+
+  return {
+    opId: op.id,
+    done: op.finished,
+    cells: op.cellIds.map((cellId) => {
+      const st = op.statusByCell.get(cellId);
+      return {
+        cellId,
+        status: st?.status ?? "PENDING",
+        message: st?.message ?? null,
+        updatedAt: st?.updatedAt ?? null,
+      };
+    }),
+  };
+}
+
+// Logical cells view for diagnostics/test-cells screen
+app.get(`${API_PREFIX}/diagnostics/test-cells`, requireAuth, async (req, res) => {
+  await refreshStateFromTelemetry();
+  const cells = buildDiagnosticCellsView();
+  res.json(cells);
+});
+
+// Start calibration for all cells (mock) and return opId
+app.post(`${API_PREFIX}/diagnostics/test-cells/calibration`, requireAuth, async (req, res) => {
+  await refreshStateFromTelemetry();
+  const ids = Array.from({ length: MACHINE_CELLS_COUNT }, (_, i) => i + 1);
+  currentCalibrationOp = createCellsOperation("calibration", ids);
+  // advance initial chunk so UI immediately sees progress
+  advanceOperation(currentCalibrationOp);
+  res.json({ opId: currentCalibrationOp.id, status: "STARTED" });
+});
+
+// Long-poll style status for calibration
+app.get(`${API_PREFIX}/diagnostics/test-cells/calibration`, requireAuth, async (req, res) => {
+  if (!currentCalibrationOp) {
+    return res.status(404).json({ error: "No calibration in progress" });
+  }
+
+  const { opId } = req.query || {};
+  if (opId && opId !== currentCalibrationOp.id) {
+    return res.status(404).json({ error: "Calibration op not found" });
+  }
+
+  await delay(300);
+  advanceOperation(currentCalibrationOp);
+  const payload = operationToResponse(currentCalibrationOp);
+  res.json(payload);
+});
+
+// Start auto-test for selected cells (or all)
+app.post(`${API_PREFIX}/diagnostics/test-cells/test`, requireAuth, async (req, res) => {
+  await refreshStateFromTelemetry();
+  const { cellIds } = req.body || {};
+  const ids =
+    Array.isArray(cellIds) && cellIds.length > 0
+      ? cellIds
+      : Array.from({ length: MACHINE_CELLS_COUNT }, (_, i) => i + 1);
+
+  currentTestOp = createCellsOperation("test", ids);
+  advanceOperation(currentTestOp);
+  res.json({ opId: currentTestOp.id, status: "STARTED" });
+});
+
+// Long-poll style status for auto-test
+app.get(`${API_PREFIX}/diagnostics/test-cells/test`, requireAuth, async (req, res) => {
+  if (!currentTestOp) {
+    return res.status(404).json({ error: "No test in progress" });
+  }
+
+  const { opId } = req.query || {};
+  if (opId && opId !== currentTestOp.id) {
+    return res.status(404).json({ error: "Test op not found" });
+  }
+
+  await delay(300);
+  advanceOperation(currentTestOp);
+  const payload = operationToResponse(currentTestOp);
+  res.json(payload);
 });
 
 // === DIAGNOSTICS & LOGS ===

@@ -79,6 +79,11 @@ bindRoute('post', '/bff/products/assign-row', Signals.ProductsAssignRow);
 
 // Diagnostics & Logs
 bindRoute('post', '/bff/diagnostics/run', Signals.DiagRunTest);
+bindRoute('post', '/bff/diagnostics/test-cells/load', Signals.DiagLoadCells);
+bindRoute('post', '/bff/diagnostics/test-cells/calibration/start', Signals.DiagStartCalibration);
+bindRoute('post', '/bff/diagnostics/test-cells/calibration/poll', Signals.DiagPollCalibration);
+bindRoute('post', '/bff/diagnostics/test-cells/test/start', Signals.DiagStartCellsTest);
+bindRoute('post', '/bff/diagnostics/test-cells/test/poll', Signals.DiagPollCellsTest);
 bindRoute('post', '/bff/diagnostics/rerun', Signals.Rerun);
 bindRoute('post', '/bff/logs/search', Signals.LogsSearch);
 bindRoute('post', '/bff/logs/full', Signals.LogsToggleFull);

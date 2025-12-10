@@ -5,6 +5,86 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ---------------- Telemetry HTTP client ----------------
+
+const TELEMETRY_API_BASE_URL =
+  (process.env.TELEMETRY_API_BASE_URL || "http://localhost:3002").replace(/\/+$/, "");
+
+let telemetryFetchImplPromise = null;
+async function getTelemetryFetch() {
+  if (typeof fetch === "function") {
+    return fetch;
+  }
+  if (!telemetryFetchImplPromise) {
+    telemetryFetchImplPromise = import("node-fetch").then(({ default: nodeFetch }) => nodeFetch);
+  }
+  return telemetryFetchImplPromise;
+}
+
+async function telemetryFetchJson(path, { method = "GET", body } = {}) {
+  const fetchImpl = await getTelemetryFetch();
+  const url = `${TELEMETRY_API_BASE_URL}${path}`;
+
+  const init = {
+    method,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  };
+
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+
+  const res = await fetchImpl(url, init);
+  const text = await res.text();
+  let json = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // ignore parse error, json остаётся null
+    }
+  }
+
+  if (!res.ok) {
+    const message =
+      (json && typeof json.message === "string" && json.message) ||
+      `Telemetry HTTP ${res.status}`;
+    const err = new Error(message);
+    err.statusCode = res.status;
+    err.body = json ?? text;
+    throw err;
+  }
+
+  return json;
+}
+
+async function fetchTelemetryMatrix() {
+  return telemetryFetchJson("/api/matrix");
+}
+
+async function fetchTelemetryCatalog() {
+  return telemetryFetchJson("/api/catalog");
+}
+
+async function postTelemetryCells(cells) {
+  if (!cells || cells.length === 0) return;
+  await telemetryFetchJson("/api/telemetry/matrix/cells", {
+    method: "POST",
+    body: cells,
+  });
+}
+
+async function postTelemetryVolumes(cells) {
+  if (!cells || cells.length === 0) return;
+  await telemetryFetchJson("/api/telemetry/matrix/volumes", {
+    method: "POST",
+    body: cells,
+  });
+}
+
 // ---------------- In-memory state (Emulated Data) ----------------
 let STATE = {
   tokens: new Map([["jwt", { role: "ENGINEER", username: "service_eng" }]]),
@@ -86,6 +166,90 @@ function buildCellDtoWithProduct(cell) {
   };
 }
 
+function mapTelemetryMatrixRowsToCells(rows) {
+  if (!Array.isArray(rows)) return [];
+
+  return rows.map((row) => {
+    const cellNumber = Number(row.cell_number ?? row.cellNumber);
+    const rowNumber = row.row_number ?? row.rowNumber ?? null;
+    const volume = row.volume ?? 0;
+    const maxVolume = row.max_volume ?? row.maxVolume ?? 0;
+    const goodId = row.good_id ?? row.goodId ?? null;
+    const size = row.size ?? 1;
+    const enabled = row.enabled ?? 1;
+
+    return {
+      id: cellNumber,
+      row: typeof rowNumber === "number" ? rowNumber : null,
+      capacity: maxVolume || 0,
+      stock: volume || 0,
+      price:
+        typeof row.price === "number"
+          ? row.price
+          : typeof row.price_minor === "number"
+          ? row.price_minor / 100
+          : typeof row.priceMinor === "number"
+          ? row.priceMinor / 100
+          : 0,
+      productId: goodId != null ? Number(goodId) : null,
+      status: enabled === 0 ? "disabled" : "enabled",
+      type: "spiral",
+      size,
+      mergedTo: null,
+    };
+  });
+}
+
+function mapTelemetryCatalogRowsToProducts(rows) {
+  if (!Array.isArray(rows)) return [];
+
+  return rows.map((row) => {
+    const id = Number(row.id);
+    const brandName = row.brand_name ?? row.brandName ?? "-";
+    const productName =
+      row.taste ?? row.product_name ?? row.productName ?? row.name ?? "";
+    const imgPath =
+      row.imgPath ?? row.img_url ?? row.imgUrl ?? null;
+
+    return {
+      id,
+      brandName,
+      productName,
+      imgPath,
+      name: productName,
+    };
+  });
+}
+
+async function refreshStateFromTelemetry() {
+  try {
+    const [matrix, catalog] = await Promise.all([
+      fetchTelemetryMatrix(),
+      fetchTelemetryCatalog().catch(() => []),
+    ]);
+
+    STATE.cells = mapTelemetryMatrixRowsToCells(matrix);
+    STATE.products = mapTelemetryCatalogRowsToProducts(catalog);
+  } catch (err) {
+    console.error("Failed to refresh state from Telemetry:", err.message || err);
+  }
+}
+
+function buildTelemetryCellPayloadFromStateCell(cell) {
+  if (!cell) return null;
+
+  return {
+    cellNumber: cell.id,
+    rowNumber: cell.row ?? null,
+    size: cell.size ?? 1,
+    goodId: cell.productId ?? null,
+    price: cell.price ?? 0,
+    volume: typeof cell.stock === "number" ? cell.stock : undefined,
+    maxVolume: typeof cell.capacity === "number" ? cell.capacity : undefined,
+    isActive: cell.status !== "disabled",
+  };
+}
+
 // Простая защита
 function requireAuth(req, res, next) {
   const h = req.headers.authorization || "";
@@ -149,8 +313,9 @@ app.get(`${API_PREFIX}/maintenance/state`, requireAuth, async (req, res) => {
 // === CELLS ===
 app.get(`${API_PREFIX}/cells`, requireAuth, async (req, res) => {
   await delay(200);
-  const cells = STATE.cells.map(buildCellDtoWithProduct);
-  res.json(cells);
+    await refreshStateFromTelemetry();
+    const cells = STATE.cells.map(buildCellDtoWithProduct);
+    res.json(cells);
 });
 
 app.post(`${API_PREFIX}/cells/stock/fill-row`, requireAuth, async (req, res) => {
@@ -161,52 +326,79 @@ app.post(`${API_PREFIX}/cells/stock/fill-row`, requireAuth, async (req, res) => 
   STATE.cells.forEach(c => {
     capacityByRow[c.row] = Math.max(capacityByRow[c.row] || 0, c.capacity || 0);
   });
-  const maxCap = capacityByRow[row] || 0;
-  STATE.cells = STATE.cells.map(c => (c.row === row ? { ...c, stock: maxCap } : c));
-  res.status(204).end();
-});
+    const maxCap = capacityByRow[row] || 0;
+    STATE.cells = STATE.cells.map(c => (c.row === row ? { ...c, stock: maxCap } : c));
+    const updatedCells = STATE.cells.filter(c => c.row === row);
+    await Promise.all([
+      syncTelemetryCellsFromStateCells(updatedCells),
+      syncTelemetryVolumesFromStateCells(updatedCells),
+    ]);
+    res.status(204).end();
+  });
 
 app.put(`${API_PREFIX}/cells/:id/stock`, requireAuth, async (req, res) => {
   const id = Number(req.params.id);
-  const { stock } = req.body;
-  const i = STATE.cells.findIndex(c => c.id === id);
-  if (i === -1) return res.status(404).json({ error: "Not found" });
-  STATE.cells[i].stock = stock;
-  res.json({});
-});
+    const { stock } = req.body;
+    const i = STATE.cells.findIndex(c => c.id === id);
+    if (i === -1) return res.status(404).json({ error: "Not found" });
+    STATE.cells[i].stock = stock;
+    const updated = STATE.cells[i];
+    await Promise.all([
+      syncTelemetryCellsFromStateCells([updated]),
+      syncTelemetryVolumesFromStateCells([updated]),
+    ]);
+    res.json({});
+  });
 
 // ... (Capacity/Price/Product setters similar to previous version, omitted for brevity but assumed present)
 // Для полноты примера оставим capacity/price/product update
-app.put(`${API_PREFIX}/cells/:id/capacity`, requireAuth, (req, res) => {
-    const i = STATE.cells.findIndex(c => c.id == req.params.id);
-    if(i>-1) STATE.cells[i].capacity = req.body.capacity;
-    res.json({});
-});
-app.put(`${API_PREFIX}/cells/:id/price`, requireAuth, (req, res) => {
-    const i = STATE.cells.findIndex(c => c.id == req.params.id);
-    if(i>-1) STATE.cells[i].price = req.body.price;
-    res.json({});
-});
-app.put(`${API_PREFIX}/cells/:id/product`, requireAuth, (req, res) => {
-    const i = STATE.cells.findIndex(c => c.id == req.params.id);
-    if(i>-1) STATE.cells[i].productId = req.body.productId;
-    res.json({});
-});
-app.put(`${API_PREFIX}/cells/capacity/set-for-row`, requireAuth, (req, res) => {
-    STATE.cells.forEach(c => { if(c.row === req.body.row) c.capacity = req.body.capacity; });
-    res.status(204).end();
-});
-app.put(`${API_PREFIX}/cells/price/set-for-row`, requireAuth, (req, res) => {
-    STATE.cells.forEach(c => { if(c.row === req.body.row) c.price = req.body.price; });
-    res.status(204).end();
-});
+  app.put(`${API_PREFIX}/cells/:id/capacity`, requireAuth, async (req, res) => {
+      const i = STATE.cells.findIndex(c => c.id == req.params.id);
+      if (i > -1) {
+        STATE.cells[i].capacity = req.body.capacity;
+        await syncTelemetryCellsFromStateCells([STATE.cells[i]]);
+      }
+      res.json({});
+  });
+  app.put(`${API_PREFIX}/cells/:id/price`, requireAuth, async (req, res) => {
+      const i = STATE.cells.findIndex(c => c.id == req.params.id);
+      if (i > -1) {
+        STATE.cells[i].price = req.body.price;
+        await syncTelemetryCellsFromStateCells([STATE.cells[i]]);
+      }
+      res.json({});
+  });
+  app.put(`${API_PREFIX}/cells/:id/product`, requireAuth, async (req, res) => {
+      const i = STATE.cells.findIndex(c => c.id == req.params.id);
+      if (i > -1) {
+        STATE.cells[i].productId = req.body.productId;
+        await syncTelemetryCellsFromStateCells([STATE.cells[i]]);
+      }
+      res.json({});
+  });
+  app.put(`${API_PREFIX}/cells/capacity/set-for-row`, requireAuth, async (req, res) => {
+      const { row, capacity } = req.body || {};
+      STATE.cells.forEach(c => { if (c.row === row) c.capacity = capacity; });
+      const updatedCells = STATE.cells.filter(c => c.row === row);
+      await syncTelemetryCellsFromStateCells(updatedCells);
+      res.status(204).end();
+  });
+  app.put(`${API_PREFIX}/cells/price/set-for-row`, requireAuth, async (req, res) => {
+      const { row, price } = req.body || {};
+      STATE.cells.forEach(c => { if (c.row === row) c.price = price; });
+      const updatedCells = STATE.cells.filter(c => c.row === row);
+      await syncTelemetryCellsFromStateCells(updatedCells);
+      res.status(204).end();
+  });
 
 
-app.post(`${API_PREFIX}/cells/status`, requireAuth, async (req, res) => {
-  const { cellIds, status } = req.body || {};
-  STATE.cells = STATE.cells.map(c => (cellIds?.includes(c.id) ? { ...c, status } : c));
-  res.status(204).end();
-});
+  app.post(`${API_PREFIX}/cells/status`, requireAuth, async (req, res) => {
+    const { cellIds, status } = req.body || {};
+    STATE.cells = STATE.cells.map(c => (cellIds?.includes(c.id) ? { ...c, status } : c));
+    const updatedCells = STATE.cells.filter(c => cellIds?.includes(c.id));
+    await syncTelemetryCellsFromStateCells(updatedCells);
+    res.status(204).end();
+  });
 
 // test-backend.mjs
 
@@ -245,6 +437,8 @@ app.post(`${API_PREFIX}/cells/merge`, requireAuth, async (req, res) => {
   });
 
   await delay(200);
+  const changedCells = STATE.cells.filter(c => c.id === masterId || slaveIds.includes(c.id));
+  await syncTelemetryCellsFromStateCells(changedCells);
   res.status(204).end();
 });
 app.post(`${API_PREFIX}/cells/split`, requireAuth, async (req, res) => {
@@ -267,19 +461,26 @@ app.post(`${API_PREFIX}/cells/split`, requireAuth, async (req, res) => {
   }
   
   // Имитация задержки записи в контроллер
-  await delay(200);
-  res.status(204).end();
-});
-
-app.put(`${API_PREFIX}/cells/type`, requireAuth, async (req, res) => {
-    const { cellIds, type } = req.body || {};
-    STATE.cells = STATE.cells.map(c => (cellIds?.includes(c.id) ? { ...c, type } : c));
+    await delay(200);
+    const changedCells = Array.isArray(cellIds)
+      ? STATE.cells.filter(c => cellIds.includes(c.id))
+      : [];
+    await syncTelemetryCellsFromStateCells(changedCells);
     res.status(204).end();
-});
+  });
+
+  app.put(`${API_PREFIX}/cells/type`, requireAuth, async (req, res) => {
+      const { cellIds, type } = req.body || {};
+      STATE.cells = STATE.cells.map(c => (cellIds?.includes(c.id) ? { ...c, type } : c));
+      const updatedCells = STATE.cells.filter(c => cellIds?.includes(c.id));
+      await syncTelemetryCellsFromStateCells(updatedCells);
+      res.status(204).end();
+  });
 
 // === PRODUCTS ===
-app.get(`${API_PREFIX}/products`, requireAuth, async (req, res) => {
-  await delay(100);
+  app.get(`${API_PREFIX}/products`, requireAuth, async (req, res) => {
+    await delay(100);
+    await refreshStateFromTelemetry();
   // Обработка пагинации и поиска (Unified v3.0)
   let { search, page, limit } = req.query;
   let result = STATE.products;
@@ -311,10 +512,16 @@ app.get(`${API_PREFIX}/products`, requireAuth, async (req, res) => {
 
 // Эмуляция реального теста моторов с задержками
 app.post(`${API_PREFIX}/diagnostics/test-cells`, requireAuth, async (req, res) => {
-  const { cellIds = [] } = req.body;
+  await refreshStateFromTelemetry();
+  const { cellIds } = req.body || {};
+  const idsToTest =
+    Array.isArray(cellIds) && cellIds.length > 0
+      ? cellIds
+      : STATE.cells.map((c) => c.id);
+
   const results = [];
   
-  for (const id of cellIds) {
+  for (const id of idsToTest) {
       // Имитируем время вращения мотора (300мс)
       await delay(300); 
       
@@ -379,6 +586,44 @@ app.post(`${API_PREFIX}/maintenance/calibration/start`, requireAuth, async (req,
 });
 
 
+function buildTelemetryVolumePayloadFromStateCell(cell) {
+  if (!cell) return null;
+
+  return {
+    cellNumber: cell.id,
+    volume: typeof cell.stock === "number" ? cell.stock : 0,
+  };
+}
+
+async function syncTelemetryCellsFromStateCells(cells) {
+  const payload = (cells || [])
+    .map(buildTelemetryCellPayloadFromStateCell)
+    .filter(Boolean);
+
+  if (!payload.length) return;
+
+  try {
+    await postTelemetryCells(payload);
+  } catch (err) {
+    console.error("Failed to sync Telemetry cells:", err.message || err);
+  }
+}
+
+async function syncTelemetryVolumesFromStateCells(cells) {
+  const payload = (cells || [])
+    .map(buildTelemetryVolumePayloadFromStateCell)
+    .filter(Boolean);
+
+  if (!payload.length) return;
+
+  try {
+    await postTelemetryVolumes(payload);
+  } catch (err) {
+    console.error("Failed to sync Telemetry volumes:", err.message || err);
+  }
+}
+
+// Test backend port configuration
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`Test backend (Unified v3.0) running at http://localhost:${PORT}${API_PREFIX}`);

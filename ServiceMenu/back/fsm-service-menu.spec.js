@@ -344,6 +344,7 @@ describe('ServiceMenuFSM — диагностика (run + results + rerun)', ()
       if (typeof fsm.backend[k] === 'function') fsm.backend[k] = vi.fn();
     }
     fsm.backend.login.mockImplementation(() => ok({ accessToken: 'jwt' }));
+    fsm.backend.getCells.mockImplementation(() => ok([{ id: 1 }, { id: 2 }]));
     await fsm.handle(Signals.AppStart);
     await fsm.handle(Signals.SubmitPin, { pin: 'ok' });
   });
@@ -356,6 +357,8 @@ describe('ServiceMenuFSM — диагностика (run + results + rerun)', ()
     const r = await fsm.handle(Signals.DiagRunTest, { cellIds: [1] });
     expect(fsm.state).toBe('DiagnosticsTestResults');
     expect(r.view.results[0].status).toBe('SUCCESS');
+    expect(Array.isArray(r.view.cells)).toBe(true);
+    expect(r.view.cells.length).toBeGreaterThan(0);
   });
 
   it('Повторный запуск из Results → опять Results', async () => {

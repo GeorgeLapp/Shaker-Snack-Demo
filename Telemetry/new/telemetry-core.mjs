@@ -400,7 +400,6 @@ class TelemetryDb {
             $enabled
           )
           ON CONFLICT(cell_number) DO UPDATE SET
-            row_number  = excluded.row_number,
             size        = excluded.size,
             good_id     = excluded.good_id,
             price_minor = excluded.price_minor,

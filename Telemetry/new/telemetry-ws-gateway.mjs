@@ -88,6 +88,7 @@ export class TelemetryWsGateway {
     this.isConnecting = false;
     this.shouldReconnect = true;
     this.reconnectDelayMs = RECONNECT_INITIAL_DELAY_MS;
+    this.autoConnectStarted = false;
 
     /** @type {Map<string, any>} ожидание по type (ACK) */
     this.pendingByType = new Map();
@@ -165,6 +166,35 @@ export class TelemetryWsGateway {
     } finally {
       this.isConnecting = false;
     }
+  }
+
+  /**
+   * Запускает фоновый цикл автоподключения по WebSocket с экспоненциальной
+   * задержкой, если сервер недоступен. Не блокирует старт приложения.
+   */
+  startAutoConnect() {
+    if (this.autoConnectStarted) return;
+    this.autoConnectStarted = true;
+
+    (async () => {
+      while (this.shouldReconnect && !this.ws) {
+        try {
+          await this.ensureConnected();
+          // Успешно подключились — дальнейший reconnect обрабатывается обработчиком close.
+          return;
+        } catch (err) {
+          const message = err && err.message ? err.message : String(err);
+          console.error('Telemetry WebSocket initial connect failed:', message);
+          await delay(this.reconnectDelayMs);
+          this.reconnectDelayMs = Math.min(
+            this.reconnectDelayMs * 2,
+            RECONNECT_MAX_DELAY_MS
+          );
+        }
+      }
+    })().catch((err) => {
+      console.error('Telemetry WebSocket auto-connect loop error:', err);
+    });
   }
 
   /**

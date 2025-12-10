@@ -63,7 +63,10 @@ bindRoute('post', '/bff/auth/me', Signals.AuthGetProfile);
 // Cells Actions
 bindRoute('post', '/bff/cells/stock', Signals.CellsEditStock);
 bindRoute('post', '/bff/cells/fill-row', Signals.CellsFillRow);
-// ... Capacity/Price bindings assumed mapped to Signals.* ...
+bindRoute('post', '/bff/cells/capacity/row', Signals.CellsSetRowCapacity);
+bindRoute('post', '/bff/cells/capacity/cell', Signals.CellsSetCellCapacity);
+bindRoute('post', '/bff/cells/price/row', Signals.CellsSetRowPrice);
+bindRoute('post', '/bff/cells/price/cell', Signals.CellsSetCellPrice);
 bindRoute('post', '/bff/cells/status', Signals.CellsSetStatus);
 bindRoute('post', '/bff/cells/merge', Signals.CellsMerge);
 bindRoute('post', '/bff/cells/split', Signals.CellsSplit);

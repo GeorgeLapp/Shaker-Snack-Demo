@@ -143,7 +143,7 @@ export const Signals = {
   CellsSetRowPrice: 'Cells.SetRowPrice',
   CellsSetCellPrice: 'Cells.SetCellPrice',
   CellsOpenAssignProduct: 'Cells.OpenAssignProduct',
-  ProductsAssignProductsAssign: 'Products.Assign',
+  ProductsAssign: 'Products.Assign',
   ProductsAssignRow: 'Products.AssignRow',
   CellsSetStatus: 'Cells.SetStatus',
   CellsMerge: 'Cells.Merge',
@@ -246,17 +246,123 @@ export class ServiceMenuFSM {
         await this.backend.setCellStock(this.ctx.token, payload.cellId, payload.stock);
         return this._reloadCells();
 
-      // ... other setters (Prices, Capacity) logic similar to EditStock ...
+      // Capacity / Price setters
+      case Signals.CellsSetRowCapacity:
+        this._requireToken();
+        await this.backend.setRowCapacity(this.ctx.token, payload.row, payload.capacity);
+        return this._reloadCells();
+
+      case Signals.CellsSetCellCapacity:
+        this._requireToken();
+        await this.backend.setCellCapacity(this.ctx.token, payload.cellId, payload.capacity);
+        return this._reloadCells();
+
+      case Signals.CellsSetRowPrice:
+        this._requireToken();
+        await this.backend.setRowPrice(this.ctx.token, payload.row, payload.price);
+        return this._reloadCells();
+
+      case Signals.CellsSetCellPrice:
+        this._requireToken();
+        await this.backend.setCellPrice(this.ctx.token, payload.cellId, payload.price);
+        return this._reloadCells();
+
+      // Products: open catalog + assign
+      case Signals.CellsOpenAssignProduct: {
+        this._requireToken();
+        this.state = 'ProductsListLoading';
+        const res = await this.backend.getProducts(this.ctx.token, payload || {});
+        if (res.status === 200) {
+          const products = res.body || [];
+          this.ctx.products = products;
+          return this._goto('ProductsListReady', { screen: 'Products/List', products });
+        }
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+      }
+
+      case Signals.ProductsAssign: {
+        this._requireToken();
+        this.state = 'AssignProductProcessing';
+        const { cellId, productId } = payload || {};
+        const res = await this.backend.assignProduct(this.ctx.token, cellId, productId);
+        if (res.status === 200 || res.status === 204) {
+          this.ctx.retryPoint = null;
+          // ensure mode = products so reload goes back to products screen
+          this.ctx.cellsMode = 'products';
+          return this._reloadCells();
+        }
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        this.ctx.retryPoint = 'AssignProductProcessing';
+        return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+      }
+
+      case Signals.ProductsAssignRow: {
+        this._requireToken();
+        this.state = 'AssignProductRowProcessing';
+        const { row, productId } = payload || {};
+        const cellsInRow = (this.ctx.cells || []).filter((c) => c.row === row);
+        const cellIds = cellsInRow.map((c) => c.id);
+
+        // Если в контексте нет ячеек этой строки — просто вернём текущий список без ошибок,
+        // чтобы UI не падал.
+        if (cellIds.length === 0) {
+          return this._goto(this.state, {
+            screen: `Cells/${this.ctx.cellsMode || 'products'}`,
+            cells: this.ctx.cells,
+          }, { warn: `No cells for row ${row}` });
+        }
+
+        for (const cellId of cellIds) {
+          const res = await this.backend.assignProduct(this.ctx.token, cellId, productId);
+          if (res.status === 401) {
+            return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+          }
+          if (res.status !== 200 && res.status !== 204) {
+            this.ctx.retryPoint = 'AssignProductRowProcessing';
+            return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+          }
+        }
+
+        this.ctx.retryPoint = null;
+        this.ctx.cellsMode = 'products';
+        return this._reloadCells();
+      }
 
       // Diagnostics
       case Signals.DiagRunTest:
         this._requireToken();
         this.state = 'DiagnosticsTestProcessing';
-        const res = await this.backend.runDiagnostics(this.ctx.token, payload.cellIds);
-        if (res.status === 200) {
-          return this._goto('DiagnosticsTestResults', { screen: 'Diagnostics/Results', results: res.body });
+        // Запускаем тест и одновременно подтягиваем актуальный список ячеек
+        // для отображения в результатах диагностики.
+        {
+          const requestedIds =
+            Array.isArray(payload?.cellIds) && payload.cellIds.length > 0
+              ? payload.cellIds
+              : (this.ctx.cells || []).map((c) => c.id);
+
+          const [diagRes, cellsRes] = await Promise.all([
+            this.backend.runDiagnostics(this.ctx.token, requestedIds),
+            this.backend.getCells(this.ctx.token),
+          ]);
+
+          if (diagRes.status === 200 && cellsRes.status === 200) {
+            const cells = cellsRes.body || [];
+            this.ctx.cells = cells;
+            return this._goto('DiagnosticsTestResults', {
+              screen: 'Diagnostics/Results',
+              results: diagRes.body,
+              cells,
+            });
+          }
+
+          const bad = diagRes.status !== 200 ? diagRes : cellsRes;
+          return this._goto('BackendError', { screen: 'Error' }, { status: bad.status });
         }
-        return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
 
       // Logs
       case Signals.LogsSearch:

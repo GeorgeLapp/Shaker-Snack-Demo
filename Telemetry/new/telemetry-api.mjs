@@ -49,6 +49,11 @@ const telemetryCore = new TelemetryCore({
   imageDir: PRODUCT_IMAGES_DIR
 });
 
+// Запускаем фоновое подключение по WebSocket при старте модуля,
+// чтобы сразу получать push-сообщения. При недоступности сервера
+// используется экспоненциальная задержка внутри TelemetryWsGateway.
+transport.startAutoConnect();
+
 
 // ========================
 // Вспомогательная валидация

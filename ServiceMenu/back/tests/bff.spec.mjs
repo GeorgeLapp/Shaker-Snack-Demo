@@ -50,7 +50,7 @@ const ROUTES = [
   { method: 'post', path: '/bff/products/assign', signal: 'Products.Assign', body: { cellId: 5, productId: 101 } },
   { method: 'post', path: '/bff/cells/status', signal: 'Cells.SetStatus', body: { cellIds: [1, 2], status: 'disabled' } },
   { method: 'post', path: '/bff/cells/merge', signal: 'Cells.Merge', body: { cellIds: [10, 11] } },
-  { method: 'post', path: '/bff/cells/type', signal: 'Cells.SetType', body: { cellIds: [21, 22], type: 'SPIRAL_BOTTLE' } },
+  { method: 'post', path: '/bff/cells/type', signal: 'Cells.SetType', body: { cellIds: [21, 22], type: 'conveyor' } },
 
   // Диагностика и логи
   { method: 'post', path: '/bff/diagnostics/run', signal: 'Diagnostics.RunTest', body: { cellIds: [1, 2, 3] } },

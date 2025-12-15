@@ -147,6 +147,8 @@ export class ServiceMenuBackendClient {
   }
 }
 
+const ALLOWED_CELL_TYPES = new Set(['spiral', 'conveyor']);
+
   export const Signals = {
   AppStart: 'UI.OpenSettings',
   SubmitPin: 'Auth.SubmitPin',
@@ -311,6 +313,65 @@ export class ServiceMenuFSM {
         this._requireToken();
         await this.backend.setCellPrice(this.ctx.token, payload.cellId, payload.price);
         return this._reloadCells();
+
+      case Signals.CellsSetStatus: {
+        this._requireToken();
+        const cellIds = Array.isArray(payload?.cellIds) ? payload.cellIds : [];
+        const status = payload?.status;
+        if (cellIds.length === 0 || typeof status !== 'string') {
+          return this._goto(this.state, {
+            screen: `Cells/${this.ctx.cellsMode || 'config'}`,
+            cells: this.ctx.cells,
+          }, { error: 'cellIds and status are required' });
+        }
+
+        const res = await this.backend.setCellsStatus(this.ctx.token, cellIds, status);
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        if (res.status !== 200 && res.status !== 204) {
+          this.ctx.retryPoint = 'CellsStatusProcessing';
+          return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+        }
+
+        this.ctx.retryPoint = null;
+        this.ctx.cellsMode = this.ctx.cellsMode || 'config';
+        return this._reloadCells();
+      }
+
+      case Signals.CellsSetType: {
+        this._requireToken();
+        const cellIds = Array.isArray(payload?.cellIds) ? payload.cellIds : [];
+        const normalizedType =
+          typeof payload?.type === 'string' ? payload.type.trim().toLowerCase() : '';
+
+        if (cellIds.length === 0 || !normalizedType) {
+          return this._goto(this.state, {
+            screen: `Cells/${this.ctx.cellsMode || 'config'}`,
+            cells: this.ctx.cells,
+          }, { error: 'cellIds and type are required' });
+        }
+
+        if (!ALLOWED_CELL_TYPES.has(normalizedType)) {
+          return this._goto(this.state, {
+            screen: `Cells/${this.ctx.cellsMode || 'config'}`,
+            cells: this.ctx.cells,
+          }, { error: 'type must be spiral or conveyor' });
+        }
+
+        const res = await this.backend.setCellsType(this.ctx.token, cellIds, normalizedType);
+        if (res.status === 401) {
+          return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
+        }
+        if (res.status !== 200 && res.status !== 204) {
+          this.ctx.retryPoint = 'CellsTypeProcessing';
+          return this._goto('BackendError', { screen: 'Error' }, { status: res.status });
+        }
+
+        this.ctx.retryPoint = null;
+        this.ctx.cellsMode = this.ctx.cellsMode || 'config';
+        return this._reloadCells();
+      }
 
       // Products: open catalog + assign
       case Signals.CellsOpenAssignProduct: {
@@ -480,9 +541,35 @@ export class ServiceMenuFSM {
         this.ctx.cellsMode = 'config';
         return this._reloadCells();
       }
-      case Signals.CellsSplit:
+      case Signals.CellsSplit: {
         this._requireToken();
-        const splitRes = await this.backend.splitCells(this.ctx.token, payload.cellIds);
+        const requested = Array.isArray(payload?.cellIds) ? payload.cellIds : [];
+        if (requested.length === 0) {
+          return this._goto(this.state, {
+            screen: `Cells/${this.ctx.cellsMode || 'config'}`,
+            cells: this.ctx.cells,
+          }, { warn: 'No cells specified for split' });
+        }
+
+        const cells = Array.isArray(this.ctx.cells) ? this.ctx.cells : [];
+        const masterIds = new Set();
+        for (const id of requested) {
+          if (id == null) continue;
+          const cell = cells.find((c) => c.id === id);
+          const masterId = cell?.mergedTo ?? id;
+          if (masterId != null) masterIds.add(masterId);
+        }
+
+        const expandedIds = new Set();
+        for (const masterId of masterIds) {
+          expandedIds.add(masterId);
+          for (const cell of cells) {
+            if (cell.mergedTo === masterId) expandedIds.add(cell.id);
+          }
+        }
+
+        const idsToSplit = expandedIds.size > 0 ? Array.from(expandedIds) : requested;
+        const splitRes = await this.backend.splitCells(this.ctx.token, idsToSplit);
         if (splitRes.status === 401) {
           return this._goto('TokenInvalid', { screen: 'AuthInput', error: 'Session expired or invalid token' });
         }
@@ -493,6 +580,7 @@ export class ServiceMenuFSM {
         this.ctx.retryPoint = null;
         this.ctx.cellsMode = 'config';
         return this._reloadCells();
+      }
       case Signals.DiagLoadCells: {
         this._requireToken();
         const res = await this.backend.getDiagCellsView(this.ctx.token);
@@ -564,4 +652,3 @@ export class ServiceMenuFSM {
 }
 
 export default ServiceMenuFSM;
-

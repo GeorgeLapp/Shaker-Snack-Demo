@@ -108,7 +108,7 @@ const routes = [
   ['post', '/bff/products/assign', 'Products.Assign', { cellId: 5, productId: 101 }],
   ['post', '/bff/cells/status', 'Cells.SetStatus', { cellIds: [1, 2], status: 'disabled' }],
   ['post', '/bff/cells/merge', 'Cells.Merge', { cellIds: [10, 11] }],
-  ['post', '/bff/cells/type', 'Cells.SetType', { cellIds: [21, 22], type: 'SPIRAL_BOTTLE' }],
+  ['post', '/bff/cells/type', 'Cells.SetType', { cellIds: [21, 22], type: 'conveyor' }],
   ['post', '/bff/diagnostics/run', 'Diagnostics.RunTest', { cellIds: [1, 2, 3] }],
   ['post', '/bff/diagnostics/rerun', 'UI.Rerun', { cellIds: [1, 2, 3] }],
   ['post', '/bff/logs/search', 'Logs.Search', { text: 'ProductService' }],

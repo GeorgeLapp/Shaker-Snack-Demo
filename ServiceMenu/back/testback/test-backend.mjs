@@ -12,6 +12,13 @@ const MACHINE_CELLS_COUNT = Number(process.env.MACHINE_CELLS_COUNT || 60);
 const TELEMETRY_API_BASE_URL =
   (process.env.TELEMETRY_API_BASE_URL || "http://localhost:3002").replace(/\/+$/, "");
 
+const ALLOWED_CELL_TYPES = new Set(["spiral", "conveyor"]);
+
+function normalizeCellType(value, fallback = "spiral") {
+  const t = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return ALLOWED_CELL_TYPES.has(t) ? t : fallback;
+}
+
 let telemetryFetchImplPromise = null;
 async function getTelemetryFetch() {
   if (typeof fetch === "function") {
@@ -204,7 +211,7 @@ function mapTelemetryMatrixRowsToCells(rows) {
           : 0,
       productId: goodId != null ? Number(goodId) : null,
       status: enabled === 0 ? "disabled" : "enabled",
-      type: "spiral",
+      type: normalizeCellType(row.type ?? row.cellType, "spiral"),
       size,
       mergedTo: null,
     };
@@ -243,13 +250,13 @@ async function refreshStateFromTelemetry() {
     const prevCells = Array.isArray(STATE.cells) ? STATE.cells : [];
     const prevById = new Map(prevCells.map((c) => [c.id, c]));
 
-    // Preserve master/slave links (mergedTo) while refreshing cells from telemetry
+    // Preserve master/slave links (mergedTo) and explicit types while refreshing cells from telemetry
     STATE.cells = newCells.map((cell) => {
       const prev = prevById.get(cell.id);
-      if (prev && typeof prev.mergedTo !== "undefined") {
-        return { ...cell, mergedTo: prev.mergedTo };
-      }
-      return cell;
+      const mergedTo =
+        prev && typeof prev.mergedTo !== "undefined" ? prev.mergedTo : cell.mergedTo;
+      const type = normalizeCellType(prev?.type, cell.type);
+      return { ...cell, mergedTo, type };
     });
 
     const productsFromTelemetry = mapTelemetryCatalogRowsToProducts(catalog);
@@ -510,8 +517,24 @@ app.post(`${API_PREFIX}/cells/split`, requireAuth, async (req, res) => {
 
   app.put(`${API_PREFIX}/cells/type`, requireAuth, async (req, res) => {
       const { cellIds, type } = req.body || {};
-      STATE.cells = STATE.cells.map(c => (cellIds?.includes(c.id) ? { ...c, type } : c));
-      const updatedCells = STATE.cells.filter(c => cellIds?.includes(c.id));
+      const normalizedType = normalizeCellType(type, null);
+      const ids = Array.isArray(cellIds)
+        ? cellIds
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0)
+        : [];
+
+      if (ids.length === 0) {
+        return res.status(400).json({ error: "cellIds are required" });
+      }
+      if (!normalizedType) {
+        return res.status(400).json({ error: "Invalid type. Allowed: spiral, conveyor" });
+      }
+
+      STATE.cells = STATE.cells.map((c) =>
+        ids.includes(c.id) ? { ...c, type: normalizedType } : c
+      );
+      const updatedCells = STATE.cells.filter((c) => ids.includes(c.id));
       await syncTelemetryCellsFromStateCells(updatedCells);
       res.status(204).end();
   });
@@ -611,6 +634,7 @@ function buildDiagnosticCellsView() {
       productName,
       stock: master?.stock ?? 0,
       capacity: master?.capacity ?? 0,
+      imgPath: master?.imgPath ?? null,
       status: master?.status ?? "disabled",
       lastError: master?.lastError ?? null,
       updatedAt: master?.updatedAt ?? null,

@@ -1,26 +1,31 @@
-$button-size: 64px;
-$imgWrapper-height: 430px;
-$imgWrapper-width: 720px;
-$generalCard-height: 492px;
-$actionBackground-height: 208px;
-$saleButton-height: 128px;
-$saleButton-width: 720px;
+$buttonSize: 64px;
+$imgWrapperHeight: 430px;
+$generalCardHeight: 492px;
+$actionBackgroundHeight: 208px;
+$saleButtonHeight: 128px;
+$infoItemWidth: 156px;
 
 .Product {
-  padding: var(--space-m) var(--space-5xl);
-  height: 100%;
+  box-sizing: border-box;
+  padding: var(--space-m) var(--space-5xl) $actionBackgroundHeight;
+
+  background: var(--bg-main-body);
+
+  overflow-y: auto;
 
   .back {
-    height: $button-size;
-    width: $button-size;
+    height: $buttonSize;
+    width: $buttonSize;
 
-    --icon-size: 40px !important;
+    --icon-size: var(--space-5xl) !important;
   }
 
   .card {
-    border-radius: 20px;
-    background-color: var(--bg-main-secondary);
     overflow: hidden;
+
+    border-radius: var(--control-radius-round-m);
+
+    background-color: var(--bg-main-secondary);
 
     .cardTitle {
       padding: var(--space-xs) var(--space-xl);
@@ -30,18 +35,19 @@ $saleButton-width: 720px;
 
     .cardContent {
       padding: var(--space-m) var(--space-xl);
+
+      .infoItem {
+        width: $infoItemWidth;
+      }
     }
   }
 
   .general {
-    height: $generalCard-height;
+    height: $generalCardHeight;
 
     .imgWrapper {
-      height: $imgWrapper-height;
-      width: $imgWrapper-width;
-
       box-sizing: border-box;
-
+      height: $imgWrapperHeight;
       padding: var(--space-2xl) var(--space-6xl);
 
       .img {
@@ -49,31 +55,31 @@ $saleButton-width: 720px;
         max-height: 100%;
       }
     }
-  }
 
-  .actionSpacer {
-    height: $actionBackground-height;
+    .textWrapper {
+      padding: var(--space-s) var(--space-xs);
+    }
   }
 
   .actionBackground {
-    position: absolute;
-
-    border-radius: 20px 20px 0 0;
-
+    position: fixed;
     bottom: 0;
     left: 0;
+    right: 0;
 
-    width: 100%;
-    height: $actionBackground-height;
+    border-radius: var(--control-radius-round-m) var(--control-radius-round-m) 0 0;
+    box-sizing: border-box;
+    height: $actionBackgroundHeight;
+    padding: var(--space-5xl);
 
     background: var(--bg-main-secondary);
   }
 
   .saleButton {
-    height: $saleButton-height;
-    width: $saleButton-width;
-    background: var(--control-primary-bg-bg);
     border-radius: var(--control-radius-round-s);
+    height: $saleButtonHeight;
+
+    background: var(--control-primary-bg-bg);
 
     .text {
       color: var(--control-primary-typo-typo);

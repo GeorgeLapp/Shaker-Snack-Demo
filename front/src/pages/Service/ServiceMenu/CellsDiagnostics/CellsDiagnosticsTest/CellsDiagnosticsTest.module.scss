@@ -1,0 +1,79 @@
+$cellNumberCardHeight: 24px;
+$cardSize: 100px;
+
+.CellsDiagnosticsTest {
+  .actionsCard {
+    padding: var(--space-m);
+
+    background: var(--bg-main-secondary);
+  }
+
+  .rowContentClassName {
+    background-color: var(--bg-main-secondary);
+  }
+
+  .cellNumberCard {
+    height: $cellNumberCardHeight;
+    border-radius: var(--control-radius-round-s) var(--control-radius-round-s) 0  0;
+    box-sizing: border-box;
+    padding: var(--space-3xs) var(--space-xs);
+
+    background: var(--bg-status-system);
+
+    .text {
+      white-space: nowrap;
+    }
+
+    &.isSelected {
+      background: var(--control-primary-bg-bg);
+    }
+  }
+
+  .mainPartCard {
+    height: $cardSize;
+    border-radius: 0;
+    border-right: 1px solid var(--bg-main-quaternary);
+    border-left: 1px solid var(--bg-main-quaternary);
+    padding: 0;
+
+    overflow: hidden;
+
+    background: var(--bg-main-brand);
+
+    .img {
+      height: $cardSize;
+
+      overflow: hidden;
+    }
+
+    &.isSelected {
+      border-right: 1px solid var(--control-primary-bg-bg);
+      border-left: 1px solid var(--control-primary-bg-bg);
+    }
+  }
+
+  .motorCellCard {
+    box-sizing: border-box;
+    border-radius: 0 0 var(--control-radius-s) var(--control-radius-s);
+    height: $cellNumberCardHeight;
+    padding: var(--space-3xs) var(--space-xs);
+
+    background: var(--bg-main-quaternary);
+
+    .iconQuestion {
+      color: var(--typo-main-secondary)
+    }
+
+    .iconAlert {
+      color: var(--typo-status-alert)
+    }
+
+    .iconSuccess {
+      color: var(--typo-status-success);
+    }
+
+    &.isSelected {
+      background: var(--control-primary-bg-bg);
+    }
+  }
+}

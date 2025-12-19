@@ -45,11 +45,11 @@ export type TabProps = {
    */
   badgeLabelText?: string | null;
   /**
-   * Рендер метод иконки c левой стороны
+   * Рендер метод иконки с левой стороны
    */
   renderLeftIcon?: () => ReactNode;
   /**
-   * Рендер метод иконки c левой стороны
+   * Рендер метод иконки с левой стороны
    */
   renderRightIcon?: () => ReactNode;
   /**
@@ -65,7 +65,7 @@ export type TabBadgeProps = TabProps & {
   /**
    * Размер таба
    */
-  size: 'm' | 's' | 'xs';
+  size: 'l' | 'm' | 's' | 'xs';
   /**
    * Выключенный таб
    */

@@ -101,13 +101,7 @@ const clientSlice = createSlice({
   },
 });
 
-export const {
-  beginSaleWorkflow,
-  updateSaleWorkflowStatus,
-  resetSaleWorkflowState,
-} = clientSlice.actions;
+export const { beginSaleWorkflow, updateSaleWorkflowStatus, resetSaleWorkflowState } =
+  clientSlice.actions;
 
 export const clientReducer = clientSlice.reducer;
-
-
-

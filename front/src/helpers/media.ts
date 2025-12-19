@@ -1,6 +1,10 @@
+import { ICON_EMPTY_DATA_URL } from '../assets/icon/iconEmpty';
+
 const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
 
-const SNACK_API_BASE_URL = (import.meta.env.VITE_APP_SNACK_API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
+const SNACK_API_BASE_URL = (
+  import.meta.env.VITE_APP_SNACK_API_URL || 'http://localhost:4000'
+).replace(/\/+$/, '');
 const RAW_MEDIA_PREFIX = import.meta.env.VITE_APP_SNACK_MEDIA_PREFIX ?? '/media';
 
 const isMediaPrefixAbsolute = ABSOLUTE_URL_PATTERN.test(RAW_MEDIA_PREFIX);
@@ -10,7 +14,9 @@ const normalizePrefixBase = () => {
     return RAW_MEDIA_PREFIX.replace(/\/+$/, '');
   }
 
-  const withLeadingSlash = RAW_MEDIA_PREFIX.startsWith('/') ? RAW_MEDIA_PREFIX : `/${RAW_MEDIA_PREFIX}`;
+  const withLeadingSlash = RAW_MEDIA_PREFIX.startsWith('/')
+    ? RAW_MEDIA_PREFIX
+    : `/${RAW_MEDIA_PREFIX}`;
   return `${SNACK_API_BASE_URL}${withLeadingSlash}`.replace(/\/+$/, '');
 };
 
@@ -53,4 +59,21 @@ export const buildSnackMediaUrl = (path: string): string => {
   const normalizedPath = cleanedPath.replace(/^\/+/, '');
 
   return normalizedPath ? `${normalizedBase}${normalizedPath}` : `${normalizedBase}`;
+};
+
+export const buildServiceMenuUrl = (productId: number, path: string): string => {
+  console.log(productId, path)
+  if (productId === 0 || !path) {
+    return ICON_EMPTY_DATA_URL;
+  }
+
+  if (ABSOLUTE_URL_PATTERN.test(path)) {
+    return path;
+  }
+
+  // Support POSIX and Windows-style paths from backend responses.
+  const cleanedPath = path.split(/[/\\]+/).at(-1);
+  const normalizedBase = MEDIA_BASE_URL.endsWith('/') ? MEDIA_BASE_URL : `${MEDIA_BASE_URL}/`;
+console.log(normalizedBase + cleanedPath)
+  return normalizedBase + cleanedPath;
 };

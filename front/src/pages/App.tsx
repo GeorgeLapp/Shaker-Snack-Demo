@@ -1,12 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Theme, ThemePreset } from '@consta/uikit/Theme';
 import { presetGpnDark, presetGpnDefault } from '../theme';
 import styles from './App.module.scss';
-import { useAppDispatch, useAppSelector } from '../app/hooks/store';
 import { Route, Routes } from 'react-router-dom';
 import { useLocation } from 'react-router';
-import i18n from 'i18next';
-import Text from '../components/withTooltip/Text';
 import { useTranslation } from 'react-i18next';
 import ClientPage from './Client';
 
@@ -29,7 +26,7 @@ export enum LanguageName {
 function setBodyColorByTheme(theme: ThemeName) {
   if (theme === 'gpnDark') {
     document.body.style.backgroundColor = '#121212';
-  } else{
+  } else {
     document.body.style.backgroundColor = '#edeef0';
   }
 }
@@ -49,8 +46,6 @@ function getPreset(themeName: ThemeName): ThemePreset {
 
 const App: React.FC = () => {
   const { t } = useTranslation();
-  ;
-
   const browserLanguage = navigator.language.startsWith('ru') ? LanguageName.ru : LanguageName.en;
   const browserTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
     ? ThemeName.gpnDark
@@ -88,11 +83,9 @@ const App: React.FC = () => {
 
   return (
     <Theme className={styles.theme} preset={getPreset(ThemeName.gpnDefault)}>
-      <div className={styles.machineScreenWrapper}>
-        <Routes>
-          <Route path='/*' element={<ClientPage />} />
-        </Routes>
-      </div>
+      <Routes>
+        <Route path="/*" element={<ClientPage />} />
+      </Routes>
     </Theme>
   );
 };

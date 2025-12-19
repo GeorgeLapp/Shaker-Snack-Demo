@@ -1,3 +1,4 @@
+$TabBadge-height--sizeL: 48px;
 $TabBadge-height--sizeM: 40px;
 $TabBadge-height--sizeS: 32px;
 $TabBadge-height--sizeXS: 24px;
@@ -85,6 +86,12 @@ $labelRight: -5px;
     }
 
     &.Size {
+      &_l {
+       height: $TabBadge-height--sizeL;
+        padding: 0 calc(var(--space-m) - 1px) 0 var(--space-m);
+        border-radius: var(--control-radius-m);
+      }
+
       &_m {
         height: $TabBadge-height--sizeM;
         padding: 0 calc(var(--space-m) - 1px) 0 var(--space-m);

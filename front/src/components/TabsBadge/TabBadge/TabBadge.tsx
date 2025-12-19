@@ -31,6 +31,8 @@ const TabBadge: FC<TabBadgeProps> = ({
 
   const sizeClassName = useMemo(() => {
     switch (size) {
+      case 'l':
+        return styles.Size_l;
       case 'm':
         return styles.Size_m;
       case 's':

@@ -4,19 +4,26 @@ import HorizontalContainer from '../../../components/HorizontalContainer';
 import styles from './ClientHeader.module.scss';
 import { ClientHeaderProps } from './types';
 
-const defaultRenderMethod = () => <div />;
+const defaultRenderMethod = () => null;
 
+/**
+ * Клиентский заголовок
+ */
 const ClientHeader: FC<ClientHeaderProps> = ({
   renderLeftSide = defaultRenderMethod,
   renderRightSide = defaultRenderMethod,
 }) => {
-  console.log('renderLeftSide, ', renderLeftSide());
-
   return (
-    <HorizontalContainer className={styles.ClientHeader}>
-      {renderLeftSide()}
-      <IconLogoShaker className={styles.icon} />
-      {renderRightSide()}
+    <HorizontalContainer className={styles.ClientHeader} align="center">
+      <HorizontalContainer className={styles.sideLeft} justify="start">
+        {renderLeftSide()}
+      </HorizontalContainer>
+      <HorizontalContainer className={styles.center} justify="center">
+        <IconLogoShaker className={styles.icon} />
+      </HorizontalContainer>
+      <HorizontalContainer className={styles.sideRight} justify="end">
+        {renderRightSide()}
+      </HorizontalContainer>
     </HorizontalContainer>
   );
 };

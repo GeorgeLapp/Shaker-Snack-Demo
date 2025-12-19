@@ -1,0 +1,62 @@
+$cellNumberCardHeight: 24px;
+$cardSize: 100px;
+
+.CellsControlPrices {
+  .rowContentClassName {
+    background-color: var(--bg-main-secondary);
+  }
+
+  .cellNumberCard {
+    width: $cardSize;
+    height: $cellNumberCardHeight;
+    border-radius: var(--control-radius-round-s) var(--control-radius-round-s) 0  0;
+    box-sizing: border-box;
+    padding: var(--space-3xs) var(--space-xs);
+
+    background: var(--bg-status-system);
+
+    .iconPowerOff {
+      width: var(--space-l);
+      height: var(--space-l);
+
+      color: var(--typo-status-alert)
+    }
+  }
+
+  .mainPartCard {
+    width: $cardSize;
+    height: $cardSize;
+    border-radius: 0;
+    border-right: 1px solid var(--bg-main-quaternary);
+    border-left: 1px solid var(--bg-main-quaternary);
+    padding: 0;
+
+    background: var(--bg-main-brand);
+
+    .img {
+      max-width: 100%;
+      max-height: 100%;
+    }
+  }
+
+  .priceCellCard {
+    width: $cardSize;
+    box-sizing: border-box;
+    border-radius: 0 0 var(--control-radius-s) var(--control-radius-s);
+    height: $cellNumberCardHeight;
+    padding: var(--space-3xs) var(--space-xs);
+
+    background: var(--bg-main-quaternary);
+  }
+
+  .productNameText {
+    min-width: $cardSize;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+}

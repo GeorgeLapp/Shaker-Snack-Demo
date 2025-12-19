@@ -5,6 +5,10 @@ import { Route, Routes } from 'react-router-dom';
 import Product from './Product';
 import { useAppDispatch } from '../../app/hooks/store';
 import { getProductMatrixAction } from '../../state/client/action';
+import ServiceMenu from '../Service/ServiceMenu';
+import CellsControl from '../Service/ServiceMenu/CellsControl';
+import ChangeCellsControlProducts from '../Service/ServiceMenu/CellsControl/CellsControlProducts/ChangeCellsControlProducts';
+import CellsDiagnostics from '../Service/ServiceMenu/CellsDiagnostics';
 
 /**
  * Страница покупателя
@@ -21,6 +25,10 @@ const ClientPage: FC = () => {
       <Routes>
         <Route path="/product/:cellId" element={<Product />} />
         <Route path="/*" element={<ProductMatrix />} />
+        <Route path="/menu" element={<ServiceMenu />} />
+        <Route path="/menu/diagnostics" element={<CellsDiagnostics />} />
+        <Route path="/menu/cellControl" element={<CellsControl />} />
+        <Route path="/menu/cellControl/changeProducts" element={<ChangeCellsControlProducts />} />
       </Routes>
     </div>
   );

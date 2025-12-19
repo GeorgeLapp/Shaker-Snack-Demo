@@ -15,7 +15,7 @@ export type TabsBadgeProps = {
   /**
    * Размер таба
    */
-  size?: 'm' | 's' | 'xs';
+  size?: 'l' | 'm' | 's' | 'xs';
   /**
    * Список табов
    */

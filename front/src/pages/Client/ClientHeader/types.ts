@@ -1,7 +1,15 @@
+import { ReactNode } from 'react';
+
 /**
  * Свойства компонента ClientHeader
  */
 export type ClientHeaderProps = {
-  renderLeftSide?: () => React.ReactNode;
-  renderRightSide?: () => React.ReactNode;
+  /**
+   * Дополнительный рендер с левой стороны
+   */
+  renderLeftSide?: () => ReactNode;
+  /**
+   * Дополнительный рендер с правой стороны
+   */
+  renderRightSide?: () => ReactNode;
 };

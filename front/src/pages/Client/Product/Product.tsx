@@ -12,10 +12,14 @@ import classNames from 'classnames';
 import HorizontalContainer from '../../../components/HorizontalContainer';
 import SaleWorkflow from './SaleWorkflow';
 
+/**
+ * Страница продукта
+ */
 const Product: FC = () => {
+  const navigate = useNavigate();
+
   const { cellId } = useParams<{ cellId: string }>();
   const formattedCellId = Number(cellId) || null;
-  const navigate = useNavigate();
 
   const cell = useAppSelector(selectProductCellById(formattedCellId));
 
@@ -23,19 +27,25 @@ const Product: FC = () => {
 
   if (!cell) return <Text size="6xl">Ячейка не найдена</Text>;
 
+  // render методы
   const renderGeneralCard = () => (
     <VerticalContainer className={classNames(styles.card, styles.general)} space={0}>
-      <HorizontalContainer className={styles.imgWrapper} justify="center">
+      <HorizontalContainer
+        className={styles.imgWrapper}
+        justify="center"
+        align="center"
+        isAutoWidth
+      >
         <img className={styles.img} src={cell.imgPath} />
       </HorizontalContainer>
-      <HorizontalContainer justify="center">
+      <HorizontalContainer justify="center" className={styles.textWrapper}>
         <Text size="3xl" weight="semibold">{`${cell.brandName} ${cell.productName}`}</Text>
       </HorizontalContainer>
     </VerticalContainer>
   );
 
   const renderInfoItem = (title: string, value: string) => (
-    <VerticalContainer space={0}>
+    <VerticalContainer space={0} className={styles.infoItem}>
       <Text size="xl" view="secondary">
         {title}
       </Text>
@@ -45,7 +55,7 @@ const Product: FC = () => {
 
   const renderInfoCard = () => (
     <VerticalContainer className={styles.card} space={0}>
-      <HorizontalContainer className={styles.cardTitle}>
+      <HorizontalContainer justify="center" className={styles.cardTitle}>
         <Text size="2xl">Пищевая ценность на 100 г</Text>
       </HorizontalContainer>
       <HorizontalContainer className={styles.cardContent} isAutoSpace>
@@ -58,52 +68,63 @@ const Product: FC = () => {
   );
 
   const renderDescriptionCard = () => (
-    <div className={styles.card}>
-      <HorizontalContainer className={styles.cardTitle}>
+    <VerticalContainer className={styles.card} space={0}>
+      <HorizontalContainer justify="center" className={styles.cardTitle}>
         <Text size="2xl">Состав</Text>
       </HorizontalContainer>
       <HorizontalContainer className={styles.cardContent} isAutoSpace>
         <Text size="xl">{cell.description}</Text>
       </HorizontalContainer>
-    </div>
+    </VerticalContainer>
   );
 
   const renderAction = () => (
-    <HorizontalContainer className={styles.actionBackground} align="center" justify="center">
+    <div className={styles.actionWrapper}>
       <HorizontalContainer
-        className={styles.saleButton}
+        className={styles.actionBackground}
         align="center"
         justify="center"
-        onClick={() => setIsOpenSaleWorkflow(true)}
+        isAutoWidth
       >
-        <Text className={styles.text} size="4xl" weight="semibold">
-          {`Оплатить ${cell.price} ₽`}
-        </Text>
+        <HorizontalContainer
+          className={styles.saleButton}
+          align="center"
+          justify="center"
+          isAutoWidth
+          onClick={() => setIsOpenSaleWorkflow(true)}
+        >
+          <Text className={styles.text} size="4xl" weight="semibold">
+            {`Оплатить ${cell.price} ₽`}
+          </Text>
+        </HorizontalContainer>
       </HorizontalContainer>
-    </HorizontalContainer>
+    </div>
+  );
+
+  const renderLeftSideHeader = () => (
+    <Button
+      className={styles.back}
+      iconSize="l"
+      view="secondary"
+      size="l"
+      onlyIcon
+      iconLeft={IconArrowLeft}
+      onClick={() => navigate('/')}
+    />
   );
 
   return (
     <VerticalContainer className={styles.Product} space="m">
-      <ClientHeader
-        renderLeftSide={() => (
-          <Button
-            className={styles.back}
-            iconSize="l"
-            view="secondary"
-            size="l"
-            onlyIcon
-            iconLeft={IconArrowLeft}
-            onClick={() => navigate('/')}
-          />
-        )}
-      />
-      <VerticalContainer space="2xl">
-        {renderGeneralCard()}
-        {renderInfoCard()}
-        {renderDescriptionCard()}
-        <div className={styles.actionSpacer} />
-      </VerticalContainer>
+      <div className={styles.header}>
+        <ClientHeader renderLeftSide={renderLeftSideHeader} />
+      </div>
+      <div className={styles.content}>
+        <VerticalContainer space="2xl">
+          {renderGeneralCard()}
+          {renderInfoCard()}
+          {renderDescriptionCard()}
+        </VerticalContainer>
+      </div>
       {renderAction()}
       {isOpenSaleWorkflow && (
         <SaleWorkflow cell={cell} onClose={() => setIsOpenSaleWorkflow(false)} />

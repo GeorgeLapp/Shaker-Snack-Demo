@@ -1,26 +1,26 @@
-$productCell-height: 182px;
-$img-height: 120px;
-$badge-height: 22px;
-$badgePrimary-height: 28px;
+$productCellHeight: 182px;
+$productCellHeightSmall: 139px;
+$imgHeight: 120px;
+$imgHeightSmall: 77px;
+$badgeHeight: 22px;
 
 .ProductMatrix {
   padding: var(--space-m);
 
-  .ProductRow {
-    .ProductCell {
-      background-color: #fff;
-      height: $productCell-height;
+  .productRow {
+    .productCell {
       flex: 1;
 
+      border: 1px solid var(--bg-border-primary);
+      border-radius: var(--control-radius-m);
       box-sizing: border-box;
-
+      height: $productCellHeight;
       padding: calc(var(--space-2xs) - 1px);
 
-      border-radius: var(--control-radius-m);
-      border: 1px solid var(--bg-border-primary);
+      background: var(--bg-main-secondary);
 
       .imgWrapper {
-        height: $img-height;
+        height: $imgHeight;
         width: 100%;
 
         .img {
@@ -30,17 +30,30 @@ $badgePrimary-height: 28px;
       }
 
       .badge {
-        height: $badge-height;
+        height: $badgeHeight;
         width: 100%;
         border-radius: var(--control-radius-s);
       }
 
       .badgeFilled {
-        height: $badgePrimary-height;
+        height: var(--space-2xl);
+
         background-color: var(--control-primary-bg-bg);
 
         .text {
           color: var(--control-primary-typo-typo);
+        }
+      }
+    }
+  }
+
+  @media (min-width: 768px) and (max-width: 768px) {
+    .productRow {
+      .productCell {
+        height: $productCellHeightSmall;
+
+        .imgWrapper {
+          height: $imgHeightSmall;
         }
       }
     }

@@ -1,0 +1,28 @@
+.ServiceMenu {
+  padding: var(--space-2xl);
+
+  .contentCard {
+    padding: var(--space-l) var(--space-l) var(--space-l) var(--space-2xl);
+
+    .circle {
+      align-items: center;
+      justify-content: center;
+
+      display: flex;
+
+      border-radius: 50%;
+      width: var(--space-3xl);
+      height: var(--space-3xl);
+
+      background-color: var(--bg-link-link);
+
+      .icon {
+        color: var(--counter-typo);
+      }
+    }
+
+    .iconArrow {
+      color: var(--typo-main-secondary)
+    }
+  }
+}

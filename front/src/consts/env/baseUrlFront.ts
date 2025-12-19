@@ -85,3 +85,8 @@ export const MAX_MESSAGE_LENGTH = 4080;
  * Ключ сервиса geoTree
  */
 export const geoTreeKey = import.meta.env.VITE_APP_GEOTREE_KEY;
+
+/**
+ * Базовый url модуля "Сервисное меню"
+ */
+export const serviceMenuBaseUrl = import.meta.env.VITE_APP_SNACK_API_SERVICE_URL;

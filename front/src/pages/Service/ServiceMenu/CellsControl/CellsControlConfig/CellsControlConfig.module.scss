@@ -1,0 +1,82 @@
+$cellNumberCardHeight: 24px;
+$cardSize: 100px;
+
+.CellsControlConfig {
+  .contentCard {
+    padding: var(--space-xs) 0;
+
+    background: var(--bg-main-secondary);
+
+    .button {
+      width: 64px;
+      height: 64px;
+    }
+  }
+
+  .rowContentClassName {
+    background-color: var(--bg-main-secondary);
+  }
+
+  .cellNumberCard {
+    height: $cellNumberCardHeight;
+    border-radius: var(--control-radius-round-s) var(--control-radius-round-s) 0  0;
+    box-sizing: border-box;
+    padding: var(--space-3xs) var(--space-xs);
+
+    background: var(--bg-main-quaternary);
+
+    .iconPowerOff {
+      width: var(--space-l);
+      height: var(--space-l);
+
+      color: var(--typo-status-alert)
+    }
+
+    &.isSelected {
+      background: var(--control-primary-bg-bg);
+    }
+  }
+
+  .mainPartCard {
+    height: $cardSize;
+    border-radius: 0;
+    border-right: 1px solid var(--bg-main-quaternary);
+    border-left: 1px solid var(--bg-main-quaternary);
+    padding: 0;
+
+    background: var(--bg-main-brand);
+
+    overflow: hidden;
+
+    &.isSelected {
+      border-right: 1px solid var(--control-primary-bg-bg);
+      border-left: 1px solid var(--control-primary-bg-bg);
+    }
+
+    .img {
+      max-width: 100%;
+      max-height: 100%;
+    }
+  }
+
+  .priceCellCard {
+    box-sizing: border-box;
+    border-radius: 0 0 var(--control-radius-s) var(--control-radius-s);
+    height: $cellNumberCardHeight;
+    padding: var(--space-3xs) var(--space-xs);
+
+    background: var(--bg-main-quaternary);
+
+    &.isSelected {
+      background: var(--control-primary-bg-bg);
+    }
+
+    .icon {
+      color: var(--control-clear-typo-typo);
+
+      &.isSelected {
+        color: var(--control-primary-typo-typo);
+      }
+    }
+  }
+}

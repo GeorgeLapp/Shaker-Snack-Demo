@@ -1,7 +1,7 @@
 /**
  * Переданный размер TabsBadge
  */
-type Size = 'xs' | 's' | 'm';
+type Size = 'xs' | 's' | 'm' | 'l';
 
 /**
  * Длина и ширина, которая будет передаваться в SkeletonBrick
@@ -28,6 +28,7 @@ const sizeDimensions: Record<Size, SizeDimensions> = {
   xs: { className: 'skeleton-xs', height: 24, width: 69 },
   s: { className: 'skeleton-s', height: 32, width: 78 },
   m: { className: 'skeleton-m', height: 40, width: 127 },
+  l: { className: 'skeleton-l', height: 48, width: 173 },
 };
 
 /**

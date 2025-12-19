@@ -54,4 +54,20 @@ export type GridTableProps<T> = {
    * Показывать ли заголовки рядов
    */
   showRowHeaders?: boolean;
+  /**
+   * Внешний className для ряда
+   */
+  rowContentClassName?: string;
+  /**
+   * Тип layout
+   */
+  layout?: 'scroll' | 'wrap' | 'fit';
+  /**
+   * Количество колонок в layout: wrap
+   */
+  wrapColumns?: number;
+  /**
+   * Ширина одной ячейки
+   */
+  cellWidth?: number;
 };

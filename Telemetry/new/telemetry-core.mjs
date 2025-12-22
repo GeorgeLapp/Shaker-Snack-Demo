@@ -10,6 +10,7 @@ import sqlite3 from 'sqlite3';
 import { promisify } from 'node:util';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   TYPE_MACHINE_INFO,
@@ -32,6 +33,7 @@ const PRICE_SCALE = 100;
 const MACHINE_INFO_SINGLETON_ID = 1;
 const CATALOG_SYNC_SINGLETON_ID = 1;
 const MATRIX_SYNC_SINGLETON_ID = 1;
+const MACHINE_CELLS_COUNT = Number(process.env.MACHINE_CELLS_COUNT || 60);
 
 // Сопоставление Content-Type -> расширение файла
 const IMAGE_CONTENT_TYPE_EXTENSIONS = {
@@ -58,14 +60,129 @@ class TelemetryDb {
     this.runAsync = promisify(this.db.run.bind(this.db));
     this.getAsync = promisify(this.db.get.bind(this.db));
     this.allAsync = promisify(this.db.all.bind(this.db));
+    this.execAsync = promisify(this.db.exec.bind(this.db));
+
+    this.matrixSeeded = false;
+    this.initPromise = this.bootstrapSchemaAndMatrix();
   }
 
   /**
    * Закрытие соединения с БД.
    */
   async close() {
+    await this.ensureReady();
     const closeAsync = promisify(this.db.close.bind(this.db));
     await closeAsync();
+  }
+
+  async ensureReady() {
+    if (this.initPromise) {
+      await this.initPromise;
+    }
+  }
+
+  async bootstrapSchemaAndMatrix() {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    const repoRoot = path.resolve(currentDir, '..', '..');
+    const productsSqlPath = path.join(repoRoot, 'productsdb.sql');
+    const matrixSqlPath = path.join(repoRoot, 'matrix.sql');
+
+    try {
+      await this.execAsync('PRAGMA foreign_keys = ON');
+    } catch (err) {
+      console.error('Failed to enable foreign_keys pragma:', err.message || err);
+    }
+
+    try {
+      const [productsSql, matrixSql] = await Promise.all([
+        fs.readFile(productsSqlPath, 'utf8'),
+        fs.readFile(matrixSqlPath, 'utf8')
+      ]);
+
+      if (productsSql) {
+        await this.execAsync(productsSql);
+      }
+      if (matrixSql) {
+        await this.execAsync(matrixSql);
+      }
+    } catch (err) {
+      console.error('Failed to apply schema from SQL files:', err.message || err);
+    }
+
+    await this.ensurePlaceholderProduct();
+    await this.ensureMatrixCellsBaseline();
+  }
+
+  async ensurePlaceholderProduct() {
+    // Minimal placeholder product to bind empty cells (id = 0)
+    await this.runAsync(
+      `
+      INSERT OR IGNORE INTO catalog_product (
+        id, brand_id, taste, img_url, is_adult, price_minor, vendor_code,
+        calories, proteins, fats, carbohydrates, compound, allergens, description
+      )
+      VALUES (0, NULL, '-', NULL, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+      `
+    );
+  }
+
+  async ensureMatrixCellsBaseline() {
+    const rows = await this.allAsync('SELECT cell_number FROM matrix_cell_config');
+    const count = new Set(rows.map((r) => Number(r.cell_number))).size;
+    if (count === MACHINE_CELLS_COUNT) {
+      this.matrixSeeded = false;
+      return false;
+    }
+
+    await this.runAsync('BEGIN IMMEDIATE');
+    try {
+      await this.runAsync('DELETE FROM matrix_cell_state');
+      await this.runAsync('DELETE FROM matrix_cell_config');
+
+      for (let cellNumber = 1; cellNumber <= MACHINE_CELLS_COUNT; cellNumber++) {
+        const rowNumber = Math.floor((cellNumber - 1) / 10) + 1;
+        await this.runAsync(
+          `
+          INSERT INTO matrix_cell_config (
+            cell_number,
+            row_number,
+            size,
+            good_id,
+            price_minor,
+            enabled
+          )
+          VALUES (
+            $cellNumber,
+            $rowNumber,
+            1,
+            0,
+            0,
+            0
+          )
+          `,
+          {
+            $cellNumber: cellNumber,
+            $rowNumber: rowNumber
+          }
+        );
+      }
+
+      await this.runAsync('COMMIT');
+      this.matrixSeeded = true;
+      return true;
+    } catch (err) {
+      await this.runAsync('ROLLBACK');
+      this.matrixSeeded = false;
+      throw err;
+    }
+  }
+
+  async hasCatalogProducts() {
+    await this.ensureReady();
+    const row = await this.getAsync(
+      'SELECT COUNT(*) AS cnt FROM catalog_product WHERE id <> 0'
+    );
+    return (row?.cnt || 0) > 0;
   }
 
   // ================
@@ -81,6 +198,7 @@ class TelemetryDb {
    * Здесь делаем проще: без CHECK, но всюду используем MACHINE_INFO_SINGLETON_ID.
    */
   async ensureMachineInfoTable() {
+    await this.ensureReady();
     // 1. Создаём таблицу без параметров
     await this.runAsync(`
       CREATE TABLE IF NOT EXISTS machine_info (
@@ -104,6 +222,7 @@ class TelemetryDb {
 
 
   async getMachineInfo() {
+    await this.ensureReady();
     await this.ensureMachineInfoTable();
     const row = await this.getAsync(
       'SELECT machine_id AS machineId, organization_id AS organizationId, model_id AS modelId, serial_number AS serialNumber FROM machine_info WHERE id = ?',
@@ -116,6 +235,7 @@ class TelemetryDb {
    * Сохранение machineInfo из ответа телеметрии.
    */
   async saveMachineInfo(info) {
+    await this.ensureReady();
     await this.ensureMachineInfoTable();
     await this.runAsync(
       `
@@ -153,6 +273,7 @@ class TelemetryDb {
    * @param {Array<any>} items массив товаров из body baseProductRequestExportTopic
    */
   async applyCatalog(items) {
+    await this.ensureReady();
     await this.runAsync('BEGIN TRANSACTION');
     try {
       // 1. Загружаем уже существующие бренды и строим карту name -> id
@@ -321,6 +442,7 @@ class TelemetryDb {
    * Получение расширенного каталога (vw_catalog_product_full).
    */
   async getCatalogFull() {
+    await this.ensureReady();
     const rows = await this.allAsync(
       'SELECT * FROM vw_catalog_product_full ORDER BY id ASC'
     );
@@ -336,6 +458,7 @@ class TelemetryDb {
    * @param {{machineId:number, organizationId:number, modelId:number, serialNumber:string}} machineInfo
    */
   async buildMatrixPayload(machineInfo) {
+    await this.ensureReady();
     const rows = await this.allAsync(
       `
       SELECT
@@ -374,6 +497,7 @@ class TelemetryDb {
    * @param {Array<any>} cells
    */
   async applyMatrixCellsFromServer(cells) {
+    await this.ensureReady();
     await this.runAsync('BEGIN TRANSACTION');
     try {
       for (const cell of cells) {
@@ -471,6 +595,7 @@ class TelemetryDb {
    * @param {Array<{cellNumber:number, volume:number}>} cells
    */
   async applyCellVolumesFromServer(cells) {
+    await this.ensureReady();
     await this.runAsync('BEGIN TRANSACTION');
     try {
       for (const cell of cells) {
@@ -499,6 +624,7 @@ class TelemetryDb {
    * Получение текущей матрицы (vw_matrix_cell_full).
    */
   async getMatrixFull() {
+    await this.ensureReady();
     const rows = await this.allAsync(
       'SELECT * FROM vw_matrix_cell_full ORDER BY cell_number ASC'
     );
@@ -516,6 +642,7 @@ class TelemetryDb {
    * @param {any} sale объект продажи из протокола saleImportTopicSnack (одна продажа)
    */
   async logSaleFromTelemetry(sale) {
+    await this.ensureReady();
     const writeOffs = Array.isArray(sale.writeOffs) ? sale.writeOffs : [];
     if (writeOffs.length === 0) {
       return; // нечего логировать
@@ -614,11 +741,45 @@ export class TelemetryCore {
     // Кэш соответствий productId -> абсолютный путь к файлу
     this.imagePathByProductId = null;
 
+    this.postBootstrapPromise = this.db
+      .ensureReady()
+      .then(() => this.handlePostBootstrap())
+      .catch((err) => {
+        console.error('Telemetry post-bootstrap failed:', err);
+      });
+
     this.transport.onPush((msg) => {
       this.handleIncomingPush(msg).catch((err) => {
         console.error('Error handling telemetry push:', err);
       });
     });
+  }
+
+  async handlePostBootstrap() {
+    const needMatrixPush = this.db.matrixSeeded;
+    const hasCatalog = await this.db.hasCatalogProducts();
+
+    if (!hasCatalog) {
+      try {
+        await this.syncCatalog();
+      } catch (err) {
+        console.error('Failed to sync catalog after bootstrap:', err.message || err);
+      }
+    }
+
+    if (needMatrixPush) {
+      try {
+        await this.syncMatrix();
+      } catch (err) {
+        console.error('Failed to push baseline matrix to telemetry:', err.message || err);
+      }
+    }
+  }
+
+  async ensurePostBootstrap() {
+    if (this.postBootstrapPromise) {
+      await this.postBootstrapPromise;
+    }
   }
 
 
@@ -777,7 +938,18 @@ export class TelemetryCore {
     }
   }
   async getCatalog() {
+    await this.ensurePostBootstrap();
     const rows = await this.db.getCatalogFull();
+    if (!rows || rows.length === 0) {
+      // Try one forced sync if catalog still empty
+      try {
+        await this.syncCatalog();
+        const refreshed = await this.db.getCatalogFull();
+        return this.mapRowsWithLocalImages(refreshed);
+      } catch (err) {
+        console.error('Catalog refresh on empty dataset failed:', err.message || err);
+      }
+    }
     return this.mapRowsWithLocalImages(rows);
   }
 
@@ -787,6 +959,7 @@ export class TelemetryCore {
   // ======================
 
   async syncMatrix() {
+    await this.db.ensureReady();
     const machine = await this.ensureMachineInfo();
     const payload = await this.db.buildMatrixPayload(machine);
     const requestUuid = this.generateRequestUuid();

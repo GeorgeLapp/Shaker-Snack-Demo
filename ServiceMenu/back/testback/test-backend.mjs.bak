@@ -113,51 +113,12 @@ let STATE = {
     lighting: true,
     controllerOnline: true,
   },
-  cells: [
-    { id: 1, row: 1, capacity: 10, stock: 3, price: 50, productId: 100, status: "enabled", type: "spiral" },
-    { id: 2, row: 1, capacity: 10, stock: 0, price: 45, productId: null, status: "enabled", type: "spiral" },
-    { id: 7, row: 2, capacity: 12, stock: 5, price: 60, productId: null, status: "enabled", type: "spiral" },
-    { id: 10,row: 2, capacity: 10, stock: 3, price: 50, productId: null, status: "disabled", type: "spiral" },
-  ],
-  products: [
-    {
-      id: 0,
-      brandName: "-",
-      productName: "Нет товара",
-      imgPath: "/img/products/no-product.png",
-      name: "Нет товара",
-    },
-    {
-      id: 100,
-      brandName: "Lays",
-      productName: "Lays Сметана и лук 120 г",
-      imgPath: "/img/products/100.png",
-      name: "Lays Сметана и лук 120 г",
-    },
-    {
-      id: 101,
-      brandName: "Snickers",
-      productName: "Snickers 50 г",
-      imgPath: "/img/products/101.png",
-      name: "Snickers 50 г",
-    },
-  ],
-  logs: [
-    { ts: new Date(Date.now() - 100000).toISOString(), level: "INFO", msg: "System boot" },
-    { ts: new Date(Date.now() - 50000).toISOString(), level: "WARN", msg: "Door opened" },
-    { ts: new Date().toISOString(), level: "INFO", msg: "Service menu accessed" }
-  ],
+  cells: [],
+  products: [NO_PRODUCT],
+  logs: [],
 };
 
 // Генератор большого количества логов для теста пагинации
-for(let i=0; i<50; i++) {
-    STATE.logs.unshift({
-        ts: new Date(Date.now() - i * 1000).toISOString(),
-        level: i % 5 === 0 ? "ERROR" : "INFO",
-        msg: `Simulated log entry #${i} from Controller`
-    });
-}
-
 // ---------------- Helpers ----------------
 
 function buildCellDtoWithProduct(cell) {
@@ -187,23 +148,18 @@ function buildCellDtoWithProduct(cell) {
 function mapTelemetryMatrixRowsToCells(rows) {
   if (!Array.isArray(rows)) return [];
 
-  const cells = rows
-  .map((row) => {
+  return rows.map((row) => {
     const cellNumber = Number(row.cell_number ?? row.cellNumber);
     const rowNumber = row.row_number ?? row.rowNumber ?? null;
     const volume = row.volume ?? 0;
     const maxVolume = row.max_volume ?? row.maxVolume ?? 0;
     const goodId = row.good_id ?? row.goodId ?? null;
-    const sizeValue = row.size ?? 1;
-    const size =
-      typeof sizeValue === "number" && Number.isFinite(sizeValue) && sizeValue >= 0
-        ? sizeValue
-        : 1;
+    const size = row.size ?? 1;
     const enabled = row.enabled ?? 1;
 
     return {
       id: cellNumber,
-      row: typeof rowNumber === "number" ? rowNumber : calcRowFromCellId(cellNumber),
+      row: typeof rowNumber === "number" ? rowNumber : null,
       capacity: maxVolume || 0,
       stock: volume || 0,
       price:
@@ -220,52 +176,7 @@ function mapTelemetryMatrixRowsToCells(rows) {
       size,
       mergedTo: null,
     };
-  })
-  .filter(Boolean);
-
-  applyMergedLinksFromSizes(cells);
-
-  return cells;
-}
-
-function getCellRowNumber(cell) {
-  return typeof cell?.row === "number" ? cell.row : calcRowFromCellId(cell?.id);
-}
-
-function applyMergedLinksFromSizes(cells) {
-  /** @type {Map<number, any[]>} */
-  const byRow = new Map();
-
-  for (const cell of cells) {
-    const row = getCellRowNumber(cell) ?? 0;
-    const arr = byRow.get(row) || [];
-    arr.push(cell);
-    byRow.set(row, arr);
-  }
-
-  for (const rowCells of byRow.values()) {
-    rowCells.sort((a, b) => a.id - b.id);
-
-    let activeMaster = null;
-    let remaining = 0;
-
-    for (const cell of rowCells) {
-      if (remaining > 0) {
-        cell.mergedTo = activeMaster;
-        remaining -= 1;
-        continue;
-      }
-
-      const normalizedSize = Number.isFinite(cell.size) ? Number(cell.size) : 1;
-      if (normalizedSize > 1) {
-        activeMaster = cell.id;
-        remaining = Math.max(0, Math.floor(normalizedSize) - 1);
-      } else {
-        activeMaster = null;
-        remaining = 0;
-      }
-    }
-  }
+  });
 }
 
 function mapTelemetryCatalogRowsToProducts(rows) {
@@ -289,85 +200,6 @@ function mapTelemetryCatalogRowsToProducts(rows) {
   });
 }
 
-function normalizeCellsSizes(cells) {
-  const items = Array.isArray(cells) ? cells.map((c) => ({ ...c })) : [];
-  const slavesByMaster = new Map();
-
-  for (const cell of items) {
-    if (cell.mergedTo != null) {
-      const arr = slavesByMaster.get(cell.mergedTo) || [];
-      arr.push(cell.id);
-      slavesByMaster.set(cell.mergedTo, arr);
-    }
-  }
-
-  return items.map((cell) => {
-    if (cell.mergedTo != null) {
-      // slave: logical size 0, master will hold the combined slot count
-      return { ...cell, size: 0 };
-    }
-    const slaveCount = slavesByMaster.get(cell.id)?.length || 0;
-    const size = 1 + slaveCount;
-    return { ...cell, size };
-  });
-}
-
-function expandCellIdsWithLinks(ids) {
-  const queue = Array.isArray(ids) ? [...ids] : [];
-  const result = new Set();
-
-  while (queue.length) {
-    const rawId = queue.pop();
-    const id = Number(rawId);
-    if (!Number.isInteger(id) || id <= 0 || result.has(id)) continue;
-
-    result.add(id);
-
-    const cell = STATE.cells.find((c) => c.id === id);
-    if (!cell) continue;
-
-    if (cell.mergedTo != null) {
-      queue.push(cell.mergedTo);
-    }
-
-    for (const c of STATE.cells) {
-      if (c.mergedTo === id) {
-        queue.push(c.id);
-      }
-    }
-  }
-
-  return Array.from(result);
-}
-
-function splitCellsByIds(ids, { clear = false } = {}) {
-  const idSet = new Set(Array.isArray(ids) ? ids : []);
-  if (idSet.size === 0) return [];
-
-  const changed = [];
-  STATE.cells = STATE.cells.map((c) => {
-    if (!idSet.has(c.id)) return c;
-
-    const next = {
-      ...c,
-      size: 1,
-      status: "enabled",
-      mergedTo: null,
-    };
-
-    if (clear) {
-      next.productId = NO_PRODUCT.id;
-      next.stock = 0;
-      next.capacity = 0;
-    }
-
-    changed.push(next);
-    return next;
-  });
-
-  return changed;
-}
-
 async function refreshStateFromTelemetry() {
   try {
     const [matrix, catalog] = await Promise.all([
@@ -383,15 +215,10 @@ async function refreshStateFromTelemetry() {
     STATE.cells = newCells.map((cell) => {
       const prev = prevById.get(cell.id);
       const mergedTo =
-        typeof cell.mergedTo !== "undefined"
-          ? cell.mergedTo
-          : prev && typeof prev.mergedTo !== "undefined"
-          ? prev.mergedTo
-          : null;
+        prev && typeof prev.mergedTo !== "undefined" ? prev.mergedTo : cell.mergedTo;
       const type = normalizeCellType(prev?.type, cell.type);
       return { ...cell, mergedTo, type };
     });
-    STATE.cells = normalizeCellsSizes(STATE.cells);
 
     const productsFromTelemetry = mapTelemetryCatalogRowsToProducts(catalog);
     const hasNoProduct = productsFromTelemetry.some((p) => p.id === NO_PRODUCT.id);
@@ -402,6 +229,11 @@ async function refreshStateFromTelemetry() {
     console.error("Failed to refresh state from Telemetry:", err.message || err);
   }
 }
+
+// Инициализация состояния из БД при старте
+refreshStateFromTelemetry().catch((err) =>
+  console.error("Initial refreshStateFromTelemetry failed:", err)
+);
 
 function buildTelemetryCellPayloadFromStateCell(cell) {
   if (!cell) return null;
@@ -483,7 +315,7 @@ app.get(`${API_PREFIX}/cells`, requireAuth, async (req, res) => {
   await delay(200);
     await refreshStateFromTelemetry();
     const cells = STATE.cells
-      .filter((c) => c.mergedTo == null) // hide slave cells on UI lists
+      .filter((c) => c.size !== 0) // скрываем слейвы (объединённые ячейки)
       .map(buildCellDtoWithProduct);
     res.json(cells);
 });
@@ -573,154 +405,84 @@ app.put(`${API_PREFIX}/cells/:id/stock`, requireAuth, async (req, res) => {
 // test-backend.mjs
 
 app.post(`${API_PREFIX}/cells/merge`, requireAuth, async (req, res) => {
-  await refreshStateFromTelemetry();
-  const { cellIds, row } = req.body || {};
-
-  let candidateIds = [];
-  let targetRow = typeof row === "number" ? row : null;
-
-  if (targetRow != null) {
-    candidateIds = STATE.cells
-      .filter((c) => getCellRowNumber(c) === targetRow)
-      .map((c) => c.id);
-  } else if (Array.isArray(cellIds)) {
-    candidateIds = cellIds;
+  const { cellIds } = req.body || {}; 
+  // Ожидаем массив [id_master, id_slave] (обычно левая и правая ячейка)
+  
+  if (!Array.isArray(cellIds) || cellIds.length < 2) {
+      return res.status(400).json({ error: "Need at least 2 cells to merge" });
   }
+  
+    const normalizedIds = Array.from(
+      new Set(
+        cellIds
+          .map((id) => Number(id))
+          .filter((id) => Number.isInteger(id) && id > 0)
+      )
+    ).sort((a, b) => a - b);
 
-  if (!Array.isArray(candidateIds) || candidateIds.length < 2) {
-    return res.status(400).json({ error: "Need at least 2 cells to merge" });
-  }
+    if (normalizedIds.length < 2) {
+        return res.status(400).json({ error: "Need at least 2 valid cells to merge" });
+    }
+  
+    const masterId = normalizedIds[0];
+    const slaveIds = normalizedIds.slice(1);
 
-  const normalizedIds = Array.from(
-    new Set(
-      candidateIds
-        .map((id) => Number(id))
-        .filter((id) => Number.isInteger(id) && id > 0)
-    )
-  ).sort((a, b) => a - b);
+  // 1. Находим Master-ячейку
+  const masterIndex = STATE.cells.findIndex(c => c.id === masterId);
+  if (masterIndex === -1) return res.status(404).json({ error: "Master cell not found" });
 
-  if (normalizedIds.length < 2) {
-    return res.status(400).json({ error: "Need at least 2 valid cells to merge" });
-  }
+  // 2. Обновляем Master: увеличиваем размер
+  // Предполагаем, что объединение идет с соседом, size становится 2
+  STATE.cells[masterIndex].size = 2; 
+  STATE.cells[masterIndex].status = 'enabled'; // При объединении обычно включаем
 
-  const cells = normalizedIds.map((id) => STATE.cells.find((c) => c.id === id));
-  if (cells.some((c) => !c)) {
-    return res.status(404).json({ error: "One or more cells not found" });
-  }
-  const rows = new Set(cells.map((c) => getCellRowNumber(c)));
-  if (rows.size > 1) {
-    return res.status(400).json({ error: "Cells must be in the same row to merge" });
-  }
-
-  if (targetRow == null && rows.size === 1) {
-    targetRow = Array.from(rows)[0];
-  }
-
-  const idsToSplit =
-    targetRow != null
-      ? STATE.cells.filter((c) => getCellRowNumber(c) === targetRow).map((c) => c.id)
-      : expandCellIdsWithLinks(normalizedIds);
-
-  splitCellsByIds(idsToSplit, { clear: false });
-  STATE.cells = normalizeCellsSizes(STATE.cells);
-
-  const mergeableIds = normalizedIds.filter((id) => {
-    const cell = STATE.cells.find((c) => c.id === id);
-    return cell && cell.mergedTo == null && cell.size === 1;
+  // 3. Обновляем Slave-ячейки: они должны исчезнуть из UI или стать "linked"
+  // В эмуляторе просто помечаем их как mergedTo (чтобы фронт их скрыл или отрисовал заглушку)
+  STATE.cells = STATE.cells.map(c => {
+      if (slaveIds.includes(c.id)) {
+          return {
+              ...c,
+              status: 'disabled', // Отключаем мотор ведомой ячейки
+              mergedTo: masterId, // Ссылка на мастера
+              size: 0             // Размер 0, чтобы не занимала место в grid (зависит от логики UI)
+          };
+      }
+      return c;
   });
 
-  if (mergeableIds.length < 2) {
-    const changedCells = STATE.cells.filter((c) => idsToSplit.includes(c.id));
-    await syncTelemetryCellsFromStateCells(changedCells);
-    return res.status(204).end();
-  }
-
-  // ????????? ???? [1,2], [3,4], ...
-  const pairs = [];
-  for (let i = 0; i < mergeableIds.length - 1; i += 2) {
-    pairs.push([mergeableIds[i], mergeableIds[i + 1]]);
-  }
-
-  if (pairs.length === 0) {
-    return res.status(400).json({ error: "Not enough cells to form pairs" });
-  }
-
-  const updatedIds = new Set(idsToSplit);
-
-  for (const [masterId, slaveId] of pairs) {
-    const masterIdx = STATE.cells.findIndex((c) => c.id === masterId);
-    const slaveIdx = STATE.cells.findIndex((c) => c.id === slaveId);
-    if (masterIdx === -1 || slaveIdx === -1) continue;
-
-    const masterCell = STATE.cells[masterIdx];
-    const slaveCell = STATE.cells[slaveIdx];
-
-    // Merge only single, non-linked cells
-    if (
-      masterCell.mergedTo != null ||
-      slaveCell.mergedTo != null ||
-      masterCell.size !== 1 ||
-      slaveCell.size !== 1
-    ) {
-      continue;
-    }
-
-    STATE.cells[masterIdx] = {
-      ...STATE.cells[masterIdx],
-      size: 2,
-      status: "enabled",
-      mergedTo: null,
-    };
-    STATE.cells[slaveIdx] = {
-      ...STATE.cells[slaveIdx],
-      status: "disabled",
-      mergedTo: masterId,
-      size: 0,
-    };
-
-    updatedIds.add(masterId);
-    updatedIds.add(slaveId);
-  }
-
-  // ??????????? ??????? ??? ?????????? ????? size = MACHINE_CELLS_COUNT
-  STATE.cells = normalizeCellsSizes(STATE.cells);
-
   await delay(200);
-  const changedCells = STATE.cells.filter((c) => updatedIds.has(c.id));
+  const changedCells = STATE.cells.filter(c => c.id === masterId || slaveIds.includes(c.id));
   await syncTelemetryCellsFromStateCells(changedCells);
   res.status(204).end();
 });
 app.post(`${API_PREFIX}/cells/split`, requireAuth, async (req, res) => {
   const { cellIds } = req.body || {};
-
-  const targetIds = new Set();
+  
   if (Array.isArray(cellIds)) {
-    for (const id of cellIds) {
-      const numId = Number(id);
-      if (!Number.isInteger(numId) || numId <= 0) continue;
-      const cell = STATE.cells.find((c) => c.id === numId);
-      if (!cell) continue;
-
-      targetIds.add(numId);
-      if (cell.mergedTo != null) {
-        targetIds.add(cell.mergedTo);
-      }
-      const slaves = STATE.cells.filter((c) => c.mergedTo === numId).map((c) => c.id);
-      slaves.forEach((sid) => targetIds.add(sid));
-    }
-  }
-
-  if (targetIds.size > 0) {
-    splitCellsByIds(Array.from(targetIds), { clear: true });
-    STATE.cells = normalizeCellsSizes(STATE.cells);
+      STATE.cells = STATE.cells.map(c => {
+          // Если ID ячейки есть в списке на разделение
+          if (cellIds.includes(c.id)) {
+              return { 
+                  ...c, 
+                  // Возвращаем дефолтные параметры одиночной ячейки
+                  size: 1,       // Размер 1 (было 2 при merge)
+                  status: 'enabled', 
+                  mergedTo: null // Удаляем ссылку на "родителя", если она была
+              };
+          }
+          return c;
+      });
   }
   
-  // ???? ??????? ??????????? ????? ???????? ? ?????????? ?????????
-  await delay(200);
-  const changedCells = STATE.cells.filter(c => targetIds.has(c.id));
-  await syncTelemetryCellsFromStateCells(changedCells);
-  res.status(204).end();
-});
+  // Имитация задержки записи в контроллер
+    await delay(200);
+    const changedCells = Array.isArray(cellIds)
+      ? STATE.cells.filter(c => cellIds.includes(c.id))
+      : [];
+    await syncTelemetryCellsFromStateCells(changedCells);
+    res.status(204).end();
+  });
+
   app.put(`${API_PREFIX}/cells/type`, requireAuth, async (req, res) => {
       const { cellIds, type } = req.body || {};
       const normalizedType = normalizeCellType(type, null);

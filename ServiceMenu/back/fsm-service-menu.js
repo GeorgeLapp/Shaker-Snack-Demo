@@ -248,6 +248,15 @@ export class ServiceMenuFSM {
           this.ctx.token = res.body.accessToken;
           // РЎРѕС…СЂР°РЅСЏРµРј СЂРѕР»СЊ РІ РєРѕРЅС‚РµРєСЃС‚Рµ, РµСЃР»Рё РЅСѓР¶РЅРѕ
           this.ctx.role = res.body.role;
+          // Prefetch catalog so products list is ready after entering service menu
+          try {
+            const productsRes = await this.backend.getProducts(this.ctx.token, {});
+            if (productsRes.status === 200 && Array.isArray(productsRes.body)) {
+              this.ctx.products = productsRes.body;
+            }
+          } catch (err) {
+            console.error('Products prefetch failed:', err?.message || err);
+          }
           return this._goto('Dashboard', { screen: 'Dashboard', message: `Role: ${this.ctx.role}` });
         }
         if (res.status === 401) return this._goto('AuthError', { screen: 'AuthInput', error: 'Wrong PIN' });

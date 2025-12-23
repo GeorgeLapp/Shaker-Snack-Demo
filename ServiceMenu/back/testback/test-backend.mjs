@@ -166,8 +166,9 @@ function buildCellDtoWithProduct(cell) {
 
   // Эмуляция полей диагностики
   const diagInfo = {
-    lastError: cell.stock === 0 ? null : (Math.random() > 0.95 ? "LAST_RUN_ERR" : null),
-    updatedAt: new Date().toISOString()
+    lastError: cell.lastError ?? null,
+    updatedAt: cell.motorUpdatedAt ?? null,
+    motorStatus: cell.motorStatus ?? "OK",
   };
 
   if (!product) {
@@ -200,6 +201,9 @@ function mapTelemetryMatrixRowsToCells(rows) {
         ? sizeValue
         : 1;
     const enabled = row.enabled ?? 1;
+    const motorStatus = row.motor_status ?? row.motorStatus ?? null;
+    const motorUpdatedAt = row.updated_at ?? row.updatedAt ?? null;
+    const motorError = row.last_error ?? row.lastError ?? null;
 
     return {
       id: cellNumber,
@@ -219,6 +223,9 @@ function mapTelemetryMatrixRowsToCells(rows) {
       type: normalizeCellType(row.type ?? row.cellType, "spiral"),
       size,
       mergedTo: null,
+      motorStatus: motorStatus ?? null,
+      motorUpdatedAt: motorUpdatedAt ?? null,
+      lastError: motorError ?? null,
     };
   })
   .filter(Boolean);
@@ -340,6 +347,43 @@ function expandCellIdsWithLinks(ids) {
   return Array.from(result);
 }
 
+function ensureCellExists(cellId, rowNumber) {
+  let cell = STATE.cells.find((c) => c.id === cellId);
+  if (cell) return cell;
+
+  const row = rowNumber ?? calcRowFromCellId(cellId);
+  cell = {
+    id: cellId,
+    row,
+    capacity: 0,
+    stock: 0,
+    price: 0,
+    productId: NO_PRODUCT.id,
+    status: "enabled",
+    type: "spiral",
+    size: 1,
+    mergedTo: null,
+    motorStatus: "OK",
+    motorUpdatedAt: null,
+    lastError: null,
+  };
+
+  STATE.cells.push(cell);
+  return cell;
+}
+
+function persistMotorStatus(cellId, status, message, updatedAt) {
+  const idx = STATE.cells.findIndex((c) => c.id === cellId);
+  if (idx === -1) return;
+
+  STATE.cells[idx] = {
+    ...STATE.cells[idx],
+    motorStatus: status ?? STATE.cells[idx].motorStatus ?? "OK",
+    lastError: message ?? null,
+    motorUpdatedAt: updatedAt ?? new Date().toISOString(),
+  };
+}
+
 function splitCellsByIds(ids, { clear = false } = {}) {
   const idSet = new Set(Array.isArray(ids) ? ids : []);
   if (idSet.size === 0) return [];
@@ -389,7 +433,10 @@ async function refreshStateFromTelemetry() {
           ? prev.mergedTo
           : null;
       const type = normalizeCellType(prev?.type, cell.type);
-      return { ...cell, mergedTo, type };
+      const motorStatus = prev?.motorStatus ?? cell.motorStatus ?? "OK";
+      const motorUpdatedAt = prev?.motorUpdatedAt ?? cell.motorUpdatedAt ?? null;
+      const lastError = prev?.lastError ?? cell.lastError ?? null;
+      return { ...cell, mergedTo, type, motorStatus, motorUpdatedAt, lastError };
     });
     STATE.cells = normalizeCellsSizes(STATE.cells);
 
@@ -574,122 +621,205 @@ app.put(`${API_PREFIX}/cells/:id/stock`, requireAuth, async (req, res) => {
 
 app.post(`${API_PREFIX}/cells/merge`, requireAuth, async (req, res) => {
   await refreshStateFromTelemetry();
+
   const { cellIds, row } = req.body || {};
 
+  // 1) Собираем candidateIds: либо из body.cellIds, либо по row (1..10 в ряду)
   let candidateIds = [];
-  let targetRow = typeof row === "number" ? row : null;
+  let targetRow = Number.isInteger(row) ? row : null;
 
-  if (targetRow != null) {
-    candidateIds = STATE.cells
-      .filter((c) => getCellRowNumber(c) === targetRow)
-      .map((c) => c.id);
-  } else if (Array.isArray(cellIds)) {
+  if (Array.isArray(cellIds) && cellIds.length > 0) {
     candidateIds = cellIds;
+  } else if (targetRow != null) {
+    const startId = (targetRow - 1) * 10 + 1;
+    candidateIds = Array.from({ length: 10 }, (_, i) => startId + i);
+    candidateIds.forEach((id) => ensureCellExists(id, targetRow));
   }
 
-  if (!Array.isArray(candidateIds) || candidateIds.length < 2) {
-    return res.status(400).json({ error: "Need at least 2 cells to merge" });
+  // 2) Нормализация: уникальные, положительные int, порядок сохраняем
+  const seen = new Set();
+  const ids = [];
+  for (const raw of candidateIds) {
+    const id = Number(raw);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
   }
 
-  const normalizedIds = Array.from(
-    new Set(
-      candidateIds
-        .map((id) => Number(id))
-        .filter((id) => Number.isInteger(id) && id > 0)
-    )
-  ).sort((a, b) => a - b);
-
-  if (normalizedIds.length < 2) {
+  if (ids.length < 2) {
     return res.status(400).json({ error: "Need at least 2 valid cells to merge" });
   }
 
-  const cells = normalizedIds.map((id) => STATE.cells.find((c) => c.id === id));
-  if (cells.some((c) => !c)) {
+  const buildIndex = () => {
+    const byId = new Map();
+    const idxById = new Map();
+    const masterHasSlave = new Set(); // id мастера, у которого есть slave (кто-то mergedTo == masterId)
+
+    for (let i = 0; i < STATE.cells.length; i++) {
+      const c = STATE.cells[i];
+      byId.set(c.id, c);
+      idxById.set(c.id, i);
+      if (c.mergedTo != null) masterHasSlave.add(c.mergedTo);
+    }
+
+    return { byId, idxById, masterHasSlave };
+  };
+
+  const { byId: byId0, masterHasSlave: masterHasSlave0 } = buildIndex();
+
+  // 3) Проверяем существование и что все в одном ряду
+  const cells0 = ids.map((id) => byId0.get(id));
+  if (cells0.some((c) => !c)) {
     return res.status(404).json({ error: "One or more cells not found" });
   }
-  const rows = new Set(cells.map((c) => getCellRowNumber(c)));
+
+  const rows = new Set(cells0.map((c) => getCellRowNumber(c)));
   if (rows.size > 1) {
     return res.status(400).json({ error: "Cells must be in the same row to merge" });
   }
+  if (targetRow == null) targetRow = Array.from(rows)[0];
 
-  if (targetRow == null && rows.size === 1) {
-    targetRow = Array.from(rows)[0];
-  }
+  const isMergedId = (id, byId, masterHasSlave) => {
+    const c = byId.get(id);
+    if (!c) return false;
+    return c.mergedTo != null || masterHasSlave.has(c.id);
+  };
 
-  const idsToSplit =
-    targetRow != null
-      ? STATE.cells.filter((c) => getCellRowNumber(c) === targetRow).map((c) => c.id)
-      : expandCellIdsWithLinks(normalizedIds);
+  const updatedIds = new Set();
 
-  splitCellsByIds(idsToSplit, { clear: false });
-  STATE.cells = normalizeCellsSizes(STATE.cells);
+  const validatePairBasics = (a, b) => {
+    const left = Math.min(a, b);
+    const right = Math.max(a, b);
 
-  const mergeableIds = normalizedIds.filter((id) => {
-    const cell = STATE.cells.find((c) => c.id === id);
-    return cell && cell.mergedTo == null && cell.size === 1;
-  });
-
-  if (mergeableIds.length < 2) {
-    const changedCells = STATE.cells.filter((c) => idsToSplit.includes(c.id));
-    await syncTelemetryCellsFromStateCells(changedCells);
-    return res.status(204).end();
-  }
-
-  // ????????? ???? [1,2], [3,4], ...
-  const pairs = [];
-  for (let i = 0; i < mergeableIds.length - 1; i += 2) {
-    pairs.push([mergeableIds[i], mergeableIds[i + 1]]);
-  }
-
-  if (pairs.length === 0) {
-    return res.status(400).json({ error: "Not enough cells to form pairs" });
-  }
-
-  const updatedIds = new Set(idsToSplit);
-
-  for (const [masterId, slaveId] of pairs) {
-    const masterIdx = STATE.cells.findIndex((c) => c.id === masterId);
-    const slaveIdx = STATE.cells.findIndex((c) => c.id === slaveId);
-    if (masterIdx === -1 || slaveIdx === -1) continue;
-
-    const masterCell = STATE.cells[masterIdx];
-    const slaveCell = STATE.cells[slaveIdx];
-
-    // Merge only single, non-linked cells
-    if (
-      masterCell.mergedTo != null ||
-      slaveCell.mergedTo != null ||
-      masterCell.size !== 1 ||
-      slaveCell.size !== 1
-    ) {
-      continue;
+    if (right !== left + 1) {
+      return { ok: false, error: `Cells ${a} and ${b} must be adjacent` };
     }
 
-    STATE.cells[masterIdx] = {
-      ...STATE.cells[masterIdx],
+    const ca = STATE.cells.find((c) => c.id === left);
+    const cb = STATE.cells.find((c) => c.id === right);
+    if (!ca || !cb) return { ok: false, error: `Cell ${!ca ? left : right} not found` };
+
+    const ra = getCellRowNumber(ca);
+    const rb = getCellRowNumber(cb);
+    if (ra == null || rb == null || ra !== rb) {
+      return { ok: false, error: `Cells ${a} and ${b} must be in the same row` };
+    }
+
+    return { ok: true, left, right };
+  };
+
+  const applyMerge = (leftId, rightId, idxById, byId, masterHasSlave) => {
+    const leftIdx = idxById.get(leftId);
+    const rightIdx = idxById.get(rightId);
+    if (leftIdx == null || rightIdx == null) {
+      return { ok: false, error: "One or more cells not found" };
+    }
+
+    const leftCell = byId.get(leftId);
+    const rightCell = byId.get(rightId);
+    if (!leftCell || !rightCell) {
+      return { ok: false, error: "One or more cells not found" };
+    }
+
+    // Можно мержить только две "одиночные" ячейки (не master и не slave), size=1
+    const leftIsMerged = leftCell.mergedTo != null || masterHasSlave.has(leftId);
+    const rightIsMerged = rightCell.mergedTo != null || masterHasSlave.has(rightId);
+    if (leftIsMerged || rightIsMerged) {
+      return { ok: false, error: `Cannot merge already merged cells (${leftId}, ${rightId})` };
+    }
+    if (leftCell.size !== 1 || rightCell.size !== 1) {
+      return { ok: false, error: `Cells must be size=1 to merge (${leftId}, ${rightId})` };
+    }
+
+    // Применяем merge: left = master, right = slave
+    STATE.cells[leftIdx] = {
+      ...STATE.cells[leftIdx],
       size: 2,
       status: "enabled",
       mergedTo: null,
     };
-    STATE.cells[slaveIdx] = {
-      ...STATE.cells[slaveIdx],
+    STATE.cells[rightIdx] = {
+      ...STATE.cells[rightIdx],
       status: "disabled",
-      mergedTo: masterId,
+      mergedTo: leftId,
       size: 0,
     };
 
-    updatedIds.add(masterId);
-    updatedIds.add(slaveId);
+    masterHasSlave.add(leftId);
+    updatedIds.add(leftId);
+    updatedIds.add(rightId);
+
+    return { ok: true };
+  };
+
+  // 4) Ровно 2 ячейки: просто merge, но merged-ячейки запрещены
+  if (ids.length === 2) {
+    const { byId, idxById, masterHasSlave } = buildIndex();
+
+    if (isMergedId(ids[0], byId, masterHasSlave) || isMergedId(ids[1], byId, masterHasSlave)) {
+      return res.status(400).json({ error: "Merging already merged cells is not allowed for 2-cell merge" });
+    }
+
+    const basics = validatePairBasics(ids[0], ids[1]);
+    if (!basics.ok) return res.status(400).json({ error: basics.error });
+
+    const r = applyMerge(basics.left, basics.right, idxById, byId, masterHasSlave);
+    if (!r.ok) return res.status(400).json({ error: r.error });
+
+    STATE.cells = normalizeCellsSizes(STATE.cells);
+
+    await delay(200);
+    const changedCells = STATE.cells.filter((c) => updatedIds.has(c.id));
+    await syncTelemetryCellsFromStateCells(changedCells);
+    return res.status(204).end();
   }
 
-  // ??????????? ??????? ??? ?????????? ????? size = MACHINE_CELLS_COUNT
-  STATE.cells = normalizeCellsSizes(STATE.cells);
+  // 5) >2 ячейки: если среди них есть merged — сначала split, потом merge попарно по порядку
+  {
+    // Определяем merged среди выбранных (на текущем состоянии ДО split)
+    const { byId, masterHasSlave } = buildIndex();
+    const mergedInSelection = ids.filter((id) => isMergedId(id, byId, masterHasSlave));
 
-  await delay(200);
-  const changedCells = STATE.cells.filter((c) => updatedIds.has(c.id));
-  await syncTelemetryCellsFromStateCells(changedCells);
-  res.status(204).end();
+    // Валидируем пары заранее (по порядку ids), чтобы не делать "тихий пропуск"
+    const pairs = [];
+    for (let i = 0; i + 1 < ids.length; i += 2) {
+      const a = ids[i];
+      const b = ids[i + 1];
+      const basics = validatePairBasics(a, b);
+      if (!basics.ok) {
+        return res.status(400).json({ error: basics.error });
+      }
+      pairs.push([basics.left, basics.right]); // внутри пары нормализуем left/right
+    }
+
+    // Если есть merged среди выбранных — сплитим их (включая связки)
+    if (mergedInSelection.length > 0) {
+      const idsToSplit = expandCellIdsWithLinks(mergedInSelection);
+      const splitted = splitCellsByIds(idsToSplit, { clear: false });
+      for (const c of splitted) updatedIds.add(c.id);
+      STATE.cells = normalizeCellsSizes(STATE.cells);
+    }
+
+    // После split пересобираем индексы и выполняем merge попарно
+    const { byId: byId2, idxById: idxById2, masterHasSlave: masterHasSlave2 } = buildIndex();
+
+    for (const [leftId, rightId] of pairs) {
+      const r = applyMerge(leftId, rightId, idxById2, byId2, masterHasSlave2);
+      if (!r.ok) {
+        // Здесь уже split мог произойти — но merge делаем строго: если пара невалидна, возвращаем ошибку
+        return res.status(400).json({ error: r.error });
+      }
+    }
+
+    STATE.cells = normalizeCellsSizes(STATE.cells);
+
+    await delay(200);
+    const changedCells = STATE.cells.filter((c) => updatedIds.has(c.id));
+    await syncTelemetryCellsFromStateCells(changedCells);
+    return res.status(204).end();
+  }
 });
+
 app.post(`${API_PREFIX}/cells/split`, requireAuth, async (req, res) => {
   const { cellIds } = req.body || {};
 
@@ -788,11 +918,11 @@ function calcRowFromCellId(cellId) {
 function buildMotorDtoFromCell(cell) {
   return {
     cellId: cell.id,
-    status: cell.status,
+    status: cell.motorStatus ?? cell.status,
     stock: cell.stock,
     capacity: cell.capacity,
     lastError: cell.lastError ?? null,
-    updatedAt: cell.updatedAt ?? null,
+    updatedAt: cell.motorUpdatedAt ?? cell.updatedAt ?? null,
   };
 }
 
@@ -897,6 +1027,13 @@ function advanceOperation(op, chunkSize = 4) {
       message,
       updatedAt: new Date().toISOString(),
     });
+
+    persistMotorStatus(
+      cellId,
+      status,
+      status === "ERROR" ? message : null,
+      new Date().toISOString()
+    );
 
     STATE.logs.unshift({
       ts: new Date().toISOString(),

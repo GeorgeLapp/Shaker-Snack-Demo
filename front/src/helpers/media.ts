@@ -62,7 +62,6 @@ export const buildSnackMediaUrl = (path: string): string => {
 };
 
 export const buildServiceMenuUrl = (productId: number, path: string): string => {
-  console.log(productId, path)
   if (productId === 0 || !path) {
     return ICON_EMPTY_DATA_URL;
   }
@@ -71,9 +70,8 @@ export const buildServiceMenuUrl = (productId: number, path: string): string => 
     return path;
   }
 
-  // Support POSIX and Windows-style paths from backend responses.
-  const cleanedPath = path.split(/[/\\]+/).at(-1);
+  const cleanedPath = path.split('/').at(-1);
   const normalizedBase = MEDIA_BASE_URL.endsWith('/') ? MEDIA_BASE_URL : `${MEDIA_BASE_URL}/`;
-console.log(normalizedBase + cleanedPath)
+
   return normalizedBase + cleanedPath;
 };

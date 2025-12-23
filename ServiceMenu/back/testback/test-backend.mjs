@@ -12,6 +12,12 @@ const MACHINE_CELLS_COUNT = Number(process.env.MACHINE_CELLS_COUNT || 60);
 const TELEMETRY_API_BASE_URL =
   (process.env.TELEMETRY_API_BASE_URL || "http://localhost:3002").replace(/\/+$/, "");
 
+const CONTROLLER_API_BASE_URL =
+  (process.env.VENDING_CONTROLLER_API_URL || "http://127.0.0.1:3001/api/v1").replace(/\/+$/, "");
+const CONTROLLER_REQUEST_TIMEOUT_MS = Number(
+  process.env.VENDING_CONTROLLER_REQUEST_TIMEOUT_MS || 10000,
+);
+
 const ALLOWED_CELL_TYPES = new Set(["spiral", "conveyor"]);
 
 function normalizeCellType(value, fallback = "spiral") {
@@ -68,6 +74,123 @@ async function telemetryFetchJson(path, { method = "GET", body } = {}) {
   }
 
   return json;
+}
+
+async function controllerFetchJson(path, { method = "GET", body } = {}) {
+  const fetchImpl = await getTelemetryFetch();
+  const url = `${CONTROLLER_API_BASE_URL}${path}`;
+
+  const init = {
+    method,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  };
+
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+
+  const timeoutMs =
+    Number.isFinite(CONTROLLER_REQUEST_TIMEOUT_MS) && CONTROLLER_REQUEST_TIMEOUT_MS > 0
+      ? CONTROLLER_REQUEST_TIMEOUT_MS
+      : null;
+  const controller = timeoutMs ? new AbortController() : null;
+  const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  if (controller) {
+    init.signal = controller.signal;
+  }
+
+  let res;
+  try {
+    res = await fetchImpl(url, init);
+  } catch (err) {
+    if (timeoutId) clearTimeout(timeoutId);
+    const error = new Error(`Controller request failed: ${err.message || err}`);
+    error.statusCode = err?.name === "AbortError" ? 504 : 502;
+    throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+
+  const text = await res.text();
+  let json = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // ignore parse error, json stays null
+    }
+  }
+
+  if (!res.ok) {
+    const message =
+      (json && json.error && typeof json.error.message === "string" && json.error.message) ||
+      `Controller HTTP ${res.status}`;
+    const err = new Error(message);
+    err.statusCode = res.status;
+    err.body = json ?? text;
+    throw err;
+  }
+
+  return json;
+}
+
+async function controllerRequest(path, { method = "GET", body } = {}) {
+  const json = await controllerFetchJson(path, { method, body });
+
+  if (!json || typeof json !== "object") {
+    const err = new Error("Controller response is empty");
+    err.statusCode = 502;
+    throw err;
+  }
+
+  if (json.success === false) {
+    const err = new Error(
+      (json.error && json.error.message) || "Controller rejected the command",
+    );
+    err.statusCode = 502;
+    err.code = json.error?.code;
+    err.details = json.error?.details;
+    throw err;
+  }
+
+  return typeof json.data !== "undefined" ? json.data : json;
+}
+
+async function controllerMakeDouble(channel) {
+  if (!Number.isInteger(channel) || channel <= 0) {
+    const err = new Error('controllerMakeDouble: "channel" must be a positive integer');
+    err.statusCode = 400;
+    throw err;
+  }
+  return controllerRequest(`/channels/${channel}/mode/double`, { method: "POST" });
+}
+
+async function controllerMakeSingle(channel) {
+  if (!Number.isInteger(channel) || channel <= 0) {
+    const err = new Error('controllerMakeSingle: "channel" must be a positive integer');
+    err.statusCode = 400;
+    throw err;
+  }
+  return controllerRequest(`/channels/${channel}/mode/single`, { method: "POST" });
+}
+
+async function controllerPollChannels(maxChannel) {
+  const q = new URLSearchParams();
+  if (Number.isInteger(maxChannel) && maxChannel > 0) {
+    q.set("maxChannel", String(maxChannel));
+  }
+  const query = q.toString();
+  const path = query ? `/channels/poll?${query}` : "/channels/poll";
+  const data = await controllerRequest(path);
+  if (!Array.isArray(data)) {
+    const err = new Error("Controller poll response is invalid");
+    err.statusCode = 502;
+    throw err;
+  }
+  return data;
 }
 
 async function fetchTelemetryMatrix() {
@@ -345,6 +468,37 @@ function expandCellIdsWithLinks(ids) {
   }
 
   return Array.from(result);
+}
+
+function getMergedMasterIds(ids) {
+  const masters = new Set();
+
+  for (const rawId of ids || []) {
+    const id = Number(rawId);
+    if (!Number.isInteger(id) || id <= 0) continue;
+    const cell = STATE.cells.find((c) => c.id === id);
+    if (!cell) continue;
+
+    const masterId = cell.mergedTo ?? cell.id;
+    const hasSlaves = STATE.cells.some((c) => c.mergedTo === masterId);
+    if (hasSlaves) {
+      masters.add(masterId);
+    }
+  }
+
+  return Array.from(masters);
+}
+
+async function applyControllerMergePairs(pairs) {
+  for (const [leftId] of pairs || []) {
+    await controllerMakeDouble(leftId);
+  }
+}
+
+async function applyControllerSplitMasters(masterIds) {
+  for (const masterId of masterIds || []) {
+    await controllerMakeSingle(masterId);
+  }
 }
 
 function ensureCellExists(cellId, rowNumber) {
@@ -763,6 +917,14 @@ app.post(`${API_PREFIX}/cells/merge`, requireAuth, async (req, res) => {
     const basics = validatePairBasics(ids[0], ids[1]);
     if (!basics.ok) return res.status(400).json({ error: basics.error });
 
+    try {
+      await applyControllerMergePairs([[basics.left, basics.right]]);
+    } catch (err) {
+      return res
+        .status(err.statusCode || 502)
+        .json({ error: err.message || "Controller merge failed" });
+    }
+
     const r = applyMerge(basics.left, basics.right, idxById, byId, masterHasSlave);
     if (!r.ok) return res.status(400).json({ error: r.error });
 
@@ -795,9 +957,27 @@ app.post(`${API_PREFIX}/cells/merge`, requireAuth, async (req, res) => {
     // Если есть merged среди выбранных — сплитим их (включая связки)
     if (mergedInSelection.length > 0) {
       const idsToSplit = expandCellIdsWithLinks(mergedInSelection);
+      const masterIdsToSplit = getMergedMasterIds(idsToSplit);
+      if (masterIdsToSplit.length > 0) {
+        try {
+          await applyControllerSplitMasters(masterIdsToSplit);
+        } catch (err) {
+          return res
+            .status(err.statusCode || 502)
+            .json({ error: err.message || "Controller split failed" });
+        }
+      }
       const splitted = splitCellsByIds(idsToSplit, { clear: false });
       for (const c of splitted) updatedIds.add(c.id);
       STATE.cells = normalizeCellsSizes(STATE.cells);
+    }
+
+    try {
+      await applyControllerMergePairs(pairs);
+    } catch (err) {
+      return res
+        .status(err.statusCode || 502)
+        .json({ error: err.message || "Controller merge failed" });
     }
 
     // После split пересобираем индексы и выполняем merge попарно
@@ -837,6 +1017,17 @@ app.post(`${API_PREFIX}/cells/split`, requireAuth, async (req, res) => {
       }
       const slaves = STATE.cells.filter((c) => c.mergedTo === numId).map((c) => c.id);
       slaves.forEach((sid) => targetIds.add(sid));
+    }
+  }
+
+  const masterIdsToSplit = getMergedMasterIds(Array.from(targetIds));
+  if (masterIdsToSplit.length > 0) {
+    try {
+      await applyControllerSplitMasters(masterIdsToSplit);
+    } catch (err) {
+      return res
+        .status(err.statusCode || 502)
+        .json({ error: err.message || "Controller split failed" });
     }
   }
 
@@ -1066,6 +1257,48 @@ function operationToResponse(op) {
   };
 }
 
+async function buildCalibrationOpFromController() {
+  const ids = Array.from({ length: MACHINE_CELLS_COUNT }, (_, i) => i + 1);
+  const results = await controllerPollChannels(MACHINE_CELLS_COUNT);
+  const resultMap = new Map();
+
+  for (const item of results) {
+    const channel = Number(item?.channel);
+    if (Number.isInteger(channel) && channel > 0) {
+      resultMap.set(channel, item);
+    }
+  }
+
+  const op = createCellsOperation("calibration", ids);
+
+  for (const cellId of ids) {
+    const res = resultMap.get(cellId);
+    const isOk = res && res.status === "ok" && res.exists === true;
+    const status = isOk ? "SUCCESS" : "ERROR";
+    const message = isOk ? "CALIBRATED" : "CALIBRATION_FAILED";
+    const updatedAt = new Date().toISOString();
+
+    op.statusByCell.set(cellId, {
+      status,
+      message,
+      updatedAt,
+    });
+
+    persistMotorStatus(cellId, status, isOk ? null : message, updatedAt);
+
+    STATE.logs.unshift({
+      ts: updatedAt,
+      level: isOk ? "INFO" : "ERROR",
+      msg: `Calibration cell #${cellId}: ${status}`,
+    });
+  }
+
+  op.nextIndex = op.cellIds.length;
+  op.finished = true;
+
+  return op;
+}
+
 // Logical cells view for diagnostics/test-cells screen
 app.get(`${API_PREFIX}/diagnostics/test-cells`, requireAuth, async (req, res) => {
   await refreshStateFromTelemetry();
@@ -1076,10 +1309,13 @@ app.get(`${API_PREFIX}/diagnostics/test-cells`, requireAuth, async (req, res) =>
 // Start calibration for all cells (mock) and return opId
 app.post(`${API_PREFIX}/diagnostics/test-cells/calibration`, requireAuth, async (req, res) => {
   await refreshStateFromTelemetry();
-  const ids = Array.from({ length: MACHINE_CELLS_COUNT }, (_, i) => i + 1);
-  currentCalibrationOp = createCellsOperation("calibration", ids);
-  // advance initial chunk so UI immediately sees progress
-  advanceOperation(currentCalibrationOp);
+  try {
+    currentCalibrationOp = await buildCalibrationOpFromController();
+  } catch (err) {
+    return res
+      .status(err.statusCode || 502)
+      .json({ error: err.message || "Controller calibration failed" });
+  }
   res.json({ opId: currentCalibrationOp.id, status: "STARTED" });
 });
 

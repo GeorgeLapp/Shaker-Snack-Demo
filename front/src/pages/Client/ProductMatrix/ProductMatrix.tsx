@@ -42,18 +42,40 @@ const ProductMatrix: FC = () => {
   };
 
   // render методы
-  const renderLoading = () => <Loader />;
+  const renderRightSide = () => (
+    <Button
+      iconSize="l"
+      view="secondary"
+      size="l"
+      onlyIcon
+      iconLeft={IconArrowLeft}
+      onClick={handleArrowClick}
+    />
+  );
+
+  const renderLoading = () => (
+    <VerticalContainer className={styles.ProductMatrix} space="m">
+      <ClientHeader renderRightSide={renderRightSide} />
+      <Loader />
+    </VerticalContainer>
+  );
 
   const renderError = () => (
-    <Text size="6xl" align="center">
-      Ошибка
-    </Text>
+    <VerticalContainer className={styles.ProductMatrix} space="m">
+      <ClientHeader renderRightSide={renderRightSide} />
+      <Text size="6xl" align="center">
+        Ошибка
+      </Text>
+    </VerticalContainer>
   );
 
   const renderEmpty = () => (
-    <Text size="6xl" align="center">
-      Нет продуктов
-    </Text>
+    <VerticalContainer className={styles.ProductMatrix} space="m">
+      <ClientHeader renderRightSide={renderRightSide} />
+      <Text size="6xl" align="center">
+        Нет продуктов
+      </Text>
+    </VerticalContainer>
   );
 
   const renderProductCell = ({ id, imgPath, cellNumber, price }: any) => (
@@ -97,17 +119,6 @@ const ProductMatrix: FC = () => {
         <React.Fragment key={index}>{renderProductRow(row)}</React.Fragment>
       ))}
     </VerticalContainer>
-  );
-
-  const renderRightSide = () => (
-    <Button
-      iconSize="l"
-      view="secondary"
-      size="l"
-      onlyIcon
-      iconLeft={IconArrowLeft}
-      onClick={handleArrowClick}
-    />
   );
 
   const renderModal = () => (

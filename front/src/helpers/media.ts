@@ -70,7 +70,8 @@ export const buildServiceMenuUrl = (productId: number, path: string): string => 
     return path;
   }
 
-  const cleanedPath = path.split('/').at(-1);
+  const normalizedPath = path.replace(/\\/g, '/');
+  const cleanedPath = normalizedPath.split('/').at(-1);
   const normalizedBase = MEDIA_BASE_URL.endsWith('/') ? MEDIA_BASE_URL : `${MEDIA_BASE_URL}/`;
 
   return normalizedBase + cleanedPath;

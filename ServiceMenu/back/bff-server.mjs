@@ -9,12 +9,15 @@ import { ServiceMenuFSM, Signals } from './fsm-service-menu.js';
 // ---------------- Конфигурация ----------------
 const PORT = process.env.BFF_PORT || 3001;
 const BACKEND_BASE_URL = process.env.SVC_BACKEND_URL || 'http://localhost:8080/api/v1';
+const TELEMETRY_API_BASE_URL =
+  (process.env.TELEMETRY_API_BASE_URL || 'http://localhost:3002').replace(/\/+$/, '');
 
 // ---------------- Инициализация FSM ----------------
 const fsm = new ServiceMenuFSM({
   backend: {
     baseUrl: BACKEND_BASE_URL,
     requestTimeoutMs: 15000,
+    telemetryBaseUrl: TELEMETRY_API_BASE_URL,
   },
   sessionInactivityMs: 180000,
 });

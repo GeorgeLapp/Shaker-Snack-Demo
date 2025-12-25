@@ -14,10 +14,19 @@ export class ServiceMenuBackendClient {
   constructor(cfg) {
     this.baseUrl = cfg.baseUrl.replace(/\/+$/, '');
     this.requestTimeoutMs = cfg.requestTimeoutMs ?? 15000;
+    this.telemetryBaseUrl = (
+      cfg.telemetryBaseUrl ||
+      process.env.TELEMETRY_API_BASE_URL ||
+      'http://localhost:3002'
+    ).replace(/\/+$/, '');
   }
 
   async _fetchJson(path, init = {}) {
-    const url = `${this.baseUrl}${path}`;
+    return this._fetchJsonFromBase(this.baseUrl, path, init);
+  }
+
+  async _fetchJsonFromBase(baseUrl, path, init = {}) {
+    const url = `${baseUrl}${path}`;
     const headers = { 'Content-Type': 'application/json', ...(init.headers || {}) };
     if (init.token) headers['Authorization'] = `Bearer ${init.token}`;
 
@@ -77,6 +86,11 @@ export class ServiceMenuBackendClient {
     // РџРѕРґРґРµСЂР¶РєР° РїРѕРёСЃРєР° Рё РїР°РіРёРЅР°С†РёРё
     const q = new URLSearchParams(params).toString();
     return this._fetchJson(`/products?${q}`, { token });
+  }
+  async syncCatalog() {
+    return this._fetchJsonFromBase(this.telemetryBaseUrl, '/api/telemetry/catalog/sync', {
+      method: 'POST',
+    });
   }
   async assignProduct(token, cellId, productId) {
     return this._fetchJson(`/cells/${cellId}/product`, { method: 'PUT', token, body: JSON.stringify({ productId }) });
@@ -248,6 +262,14 @@ export class ServiceMenuFSM {
           this.ctx.token = res.body.accessToken;
           // РЎРѕС…СЂР°РЅСЏРµРј СЂРѕР»СЊ РІ РєРѕРЅС‚РµРєСЃС‚Рµ, РµСЃР»Рё РЅСѓР¶РЅРѕ
           this.ctx.role = res.body.role;
+          try {
+            const syncRes = await this.backend.syncCatalog();
+            if (syncRes?.status && syncRes.status !== 200) {
+              console.warn('Catalog sync failed:', syncRes.status);
+            }
+          } catch (err) {
+            console.error('Catalog sync failed:', err?.message || err);
+          }
           // Prefetch catalog so products list is ready after entering service menu
           try {
             const productsRes = await this.backend.getProducts(this.ctx.token, {});

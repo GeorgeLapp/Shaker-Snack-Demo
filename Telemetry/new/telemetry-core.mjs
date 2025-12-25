@@ -237,6 +237,19 @@ class TelemetryDb {
   async saveMachineInfo(info) {
     await this.ensureReady();
     await this.ensureMachineInfoTable();
+    const source = info ?? {};
+    const toIntOrNull = (value) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+    const machineId = toIntOrNull(
+      source.machineId ?? source.id ?? source.machine_id ?? null
+    );
+    const organizationId = toIntOrNull(
+      source.organizationId ?? source.orgId ?? source.organization_id ?? source.org_id ?? null
+    );
+    const modelId = toIntOrNull(source.modelId ?? source.model_id ?? null);
+    const serialNumber = source.serialNumber ?? source.serial_number ?? null;
     await this.runAsync(
       `
       UPDATE machine_info
@@ -247,10 +260,10 @@ class TelemetryDb {
        WHERE id = $id
       `,
       {
-        $machineId: info.id,
-        $organizationId: info.organizationId,
-        $modelId: info.modelId,
-        $serialNumber: info.serialNumber,
+        $machineId: machineId,
+        $organizationId: organizationId,
+        $modelId: modelId,
+        $serialNumber: serialNumber,
         $id: MACHINE_INFO_SINGLETON_ID
       }
     );

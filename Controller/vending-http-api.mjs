@@ -144,6 +144,8 @@
  */
 
 import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   VendingController,
   VendingControllerError,
@@ -1258,7 +1260,10 @@ export async function startVendingHttpServer({
  *     ],
  *   };
  */
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+) {
   const portPath =
     process.env.VENDING_PORT_PATH ||
     process.argv[2] ||

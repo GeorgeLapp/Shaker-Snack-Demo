@@ -1,0 +1,1714 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>Fortuna Express – Telegram Mini App (MVP Proto)</title>
+
+  <style>
+    /* =========================
+       Telegram WebApp-like UI
+       Light/Dark themes with manual toggle
+       ========================= */
+
+    :root{
+      --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
+
+      /* tokens (light default) */
+      --bg: #f3f4f6;
+      --surface: #ffffff;
+      --surface2: #f6f7f9;
+      --text: #111827;
+      --muted: #6b7280;
+      --muted2:#9ca3af;
+      --border: rgba(17,24,39,.10);
+
+      --accent:#2aabee;      /* Telegram-ish */
+      --accent2:#229ed9;
+      --accentText:#ffffff;
+
+      --danger:#ef4444;
+      --success:#10b981;
+      --warning:#f59e0b;
+
+      --shadow: 0 18px 40px rgba(17,24,39,.12);
+      --shadow2: 0 10px 24px rgba(17,24,39,.10);
+
+      --radius: 16px;
+      --radius2: 12px;
+      --btnH: 52px;
+
+      --safeBottom: 14px;
+      --safeTop: 0px;
+    }
+
+    /* auto dark via OS */
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg: #0b1220;
+        --surface: #0f172a;
+        --surface2: #111c33;
+        --text: rgba(255,255,255,.92);
+        --muted: rgba(255,255,255,.64);
+        --muted2: rgba(255,255,255,.45);
+        --border: rgba(255,255,255,.12);
+
+        --shadow: 0 20px 60px rgba(0,0,0,.45);
+        --shadow2: 0 12px 26px rgba(0,0,0,.30);
+      }
+    }
+
+    /* manual override */
+    html[data-theme="light"]{
+      --bg: #f3f4f6;
+      --surface: #ffffff;
+      --surface2: #f6f7f9;
+      --text: #111827;
+      --muted: #6b7280;
+      --muted2:#9ca3af;
+      --border: rgba(17,24,39,.10);
+
+      --shadow: 0 18px 40px rgba(17,24,39,.12);
+      --shadow2: 0 10px 24px rgba(17,24,39,.10);
+    }
+    html[data-theme="dark"]{
+      --bg: #0b1220;
+      --surface: #0f172a;
+      --surface2: #111c33;
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.64);
+      --muted2: rgba(255,255,255,.45);
+      --border: rgba(255,255,255,.12);
+
+      --shadow: 0 20px 60px rgba(0,0,0,.45);
+      --shadow2: 0 12px 26px rgba(0,0,0,.30);
+    }
+
+    *{ box-sizing:border-box; }
+    html, body{ height:100%; }
+    body{
+      margin:0;
+      font-family: var(--font);
+      background:
+        radial-gradient(900px 500px at 10% 0%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 55%),
+        radial-gradient(900px 600px at 90% 10%, color-mix(in oklab, var(--success) 16%, transparent), transparent 58%),
+        var(--bg);
+      color: var(--text);
+    }
+
+    /* ======= Presentation shell ======= */
+    .page{
+      min-height:100%;
+      display:flex;
+      justify-content:center;
+      align-items:flex-start;
+      padding: 18px 14px;
+      gap:14px;
+    }
+    .leftCol{
+      width: min(420px, 100%);
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      align-items:center;
+      flex: 0 0 auto;
+    }
+    .rightCol{
+      flex: 1 1 auto;
+      max-width: 560px;
+      min-width: 320px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    @media (max-width: 980px){
+      .page{ flex-direction:column; align-items:center; }
+      .rightCol{ width:min(560px,100%); }
+    }
+
+    /* ======= Top note ======= */
+    .topnote{
+      width:min(980px, 100%);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:12px 14px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      background: color-mix(in oklab, var(--surface) 80%, transparent);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow2);
+    }
+    .topnote .left{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width:0;
+    }
+    .pill{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background: color-mix(in oklab, var(--text) 4%, transparent);
+      color: var(--muted);
+      white-space:nowrap;
+    }
+    .hint{
+      font-size:12px;
+      color: var(--muted);
+      line-height:1.35;
+      min-width:0;
+    }
+    .hint b{ color: var(--text); font-weight:900; }
+
+    /* ======= Device ======= */
+    .device{
+      width: min(390px, 100%);
+      border-radius: 28px;
+      background: linear-gradient(180deg,
+        color-mix(in oklab, var(--surface) 86%, transparent),
+        color-mix(in oklab, var(--surface) 62%, transparent)
+      );
+      padding: 12px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+    .device-inner{
+      border-radius: 22px;
+      overflow:hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      position:relative;
+    }
+    .statusbar{
+      height: 26px;
+      padding: 6px 12px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      font-size:12px;
+      color: var(--muted);
+      background: color-mix(in oklab, var(--text) 3%, transparent);
+      border-bottom: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+    }
+    .dots{ display:flex; gap:6px; }
+    .dot{ width:6px; height:6px; border-radius:50%; background: color-mix(in oklab, var(--text) 25%, transparent); }
+
+    .app{
+      height: 720px;
+      max-height: 78vh;
+      overflow:hidden;
+      position:relative;
+      background: var(--bg);
+    }
+
+    /* ======= Telegram top bar (fake WebApp) ======= */
+    .tgbar{
+      height: 48px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding: 0 10px;
+      background: var(--surface);
+      border-bottom: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+      position:sticky;
+      top:0;
+      z-index:5;
+    }
+    .backBtn{
+      width:34px;height:34px;border-radius:11px;
+      display:grid;place-items:center;
+      border:1px solid color-mix(in oklab, var(--border) 85%, transparent);
+      background: color-mix(in oklab, var(--text) 4%, transparent);
+      color: color-mix(in oklab, var(--text) 75%, transparent);
+      cursor:pointer;
+      user-select:none;
+      transition: transform .15s ease, background .15s ease;
+    }
+    .backBtn:active{ transform: translateY(1px); }
+    .backBtn:hover{ background: color-mix(in oklab, var(--text) 7%, transparent); }
+    .tgtitle{
+      font-size:14px;
+      font-weight:900;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .tgright{
+      margin-left:auto;
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    .chipBtn{
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background: color-mix(in oklab, var(--text) 4%, transparent);
+      color: var(--muted);
+      cursor:pointer;
+      user-select:none;
+    }
+    .chipBtn:hover{ background: color-mix(in oklab, var(--text) 7%, transparent); }
+
+    /* ======= Screens ======= */
+    .screen{
+      position:absolute;
+      inset:0;
+      display:none;
+      background: var(--bg);
+    }
+    .screen.active{
+      display:block;
+      animation: screenIn .22s ease-out;
+    }
+    @keyframes screenIn{
+      from{ opacity:0; transform: translateY(10px); }
+      to{ opacity:1; transform: translateY(0); }
+    }
+
+    .body{
+      padding: 14px 14px 96px 14px; /* space for main button */
+      height:100%;
+      overflow:auto;
+    }
+
+    h1{
+      font-size:22px;
+      margin: 6px 0 8px 0;
+      letter-spacing:-.2px;
+      line-height:1.15;
+    }
+    p{
+      margin: 0 0 14px 0;
+      color: var(--muted);
+      font-size:13.5px;
+      line-height:1.45;
+    }
+
+    .card{
+      background: var(--surface);
+      border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: 0 10px 24px color-mix(in oklab, #000 10%, transparent);
+    }
+    .card + .card{ margin-top:12px; }
+
+    .sectionTitle{
+      font-weight:900;
+      font-size:14px;
+      margin-bottom:8px;
+    }
+
+    .info{
+      display:flex;
+      align-items:flex-start;
+      gap:10px;
+      padding:12px;
+      border-radius: 16px;
+      border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+      background: color-mix(in oklab, var(--accent) 8%, transparent);
+      color: color-mix(in oklab, var(--text) 82%, transparent);
+      font-size:13px;
+      line-height:1.4;
+    }
+    .badge{
+      font-size:12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border:1px solid var(--border);
+      background: color-mix(in oklab, var(--text) 4%, transparent);
+      color: var(--muted);
+      white-space:nowrap;
+      flex:0 0 auto;
+    }
+    .badge.ok{
+      border-color: color-mix(in oklab, var(--success) 35%, var(--border));
+      background: color-mix(in oklab, var(--success) 12%, transparent);
+      color: color-mix(in oklab, var(--success) 90%, transparent);
+      font-weight:900;
+    }
+
+    /* ======= Inputs ======= */
+    .field{
+      display:flex;
+      flex-direction:column;
+      gap:7px;
+      margin-top: 12px;
+      position:relative;
+    }
+    .label{
+      font-size:12px;
+      color: var(--muted);
+    }
+    input{
+      width:100%;
+      height: 48px;
+      border-radius: 14px;
+      padding: 0 12px;
+      border: 1px solid color-mix(in oklab, var(--border) 92%, transparent);
+      background: var(--surface2);
+      color: var(--text);
+      outline:none;
+      font-size:14px;
+      transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+    input::placeholder{ color: var(--muted2); }
+    input:focus{
+      border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+      box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 16%, transparent);
+      background: color-mix(in oklab, var(--surface) 92%, transparent);
+    }
+
+    .errorText{
+      margin-top:6px;
+      color: color-mix(in oklab, var(--danger) 80%, transparent);
+      font-size:12px;
+      display:none;
+    }
+    .field.invalid .errorText{ display:block; }
+    .field.invalid input{ border-color: color-mix(in oklab, var(--danger) 55%, transparent); }
+
+    /* ======= Autocomplete ======= */
+    .ac{
+      position:absolute;
+      left:0; right:0;
+      top: calc(100% + 6px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow2);
+      overflow:hidden;
+      z-index:20;
+      display:none;
+      max-height: 240px;
+    }
+    .ac.show{ display:block; animation: fadeIn .12s ease-out; }
+    @keyframes fadeIn{ from{opacity:0; transform: translateY(-4px);} to{opacity:1; transform:none;} }
+    .acItem{
+      padding: 10px 12px;
+      cursor:pointer;
+      font-size:13.5px;
+      border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+      display:flex;
+      gap:10px;
+      align-items:center;
+    }
+    .acItem:last-child{ border-bottom:none; }
+    .acItem:hover, .acItem.active{
+      background: color-mix(in oklab, var(--accent) 10%, transparent);
+    }
+    .acCity{ font-weight:800; }
+    .acRegion{ color: var(--muted); font-size:12px; margin-left:auto; }
+
+    /* ======= Radio list ======= */
+    .radio{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      margin-top:10px;
+    }
+    .radio button{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding: 12px 12px;
+      border-radius: 16px;
+      border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
+      background: var(--surface2);
+      color: var(--text);
+      cursor:pointer;
+      text-align:left;
+      transition: transform .15s ease, background .15s ease, border-color .15s ease;
+    }
+    .radio button:hover{
+      transform: translateY(-1px);
+      background: color-mix(in oklab, var(--accent) 7%, var(--surface2));
+      border-color: color-mix(in oklab, var(--accent) 24%, var(--border));
+    }
+    .rb{
+      width:18px;height:18px;border-radius:50%;
+      border:2px solid color-mix(in oklab, var(--text) 20%, transparent);
+      display:grid;
+      place-items:center;
+      flex:0 0 auto;
+    }
+    .rb::after{
+      content:"";
+      width:9px;height:9px;border-radius:50%;
+      background: transparent;
+    }
+    .radio button.selected .rb{
+      border-color: color-mix(in oklab, var(--accent) 90%, transparent);
+    }
+    .radio button.selected .rb::after{
+      background: color-mix(in oklab, var(--accent) 90%, transparent);
+    }
+    .radio small{
+      display:block;
+      color: var(--muted);
+      font-size:12px;
+      margin-top:2px;
+    }
+
+    /* ======= MainButton (Telegram-like) ======= */
+    .mainButtonWrap{
+      position:absolute;
+      left:0; right:0; bottom:0;
+      padding: 10px 12px calc(var(--safeBottom) + 4px) 12px;
+      background: linear-gradient(180deg,
+        color-mix(in oklab, var(--bg) 0%, transparent),
+        color-mix(in oklab, var(--bg) 88%, transparent) 28%,
+        color-mix(in oklab, var(--bg) 100%, transparent)
+      );
+      border-top: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+      z-index:10;
+    }
+    .mainButton{
+      width:100%;
+      height: var(--btnH);
+      border-radius: 16px;
+      border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+      background: linear-gradient(180deg, var(--accent), var(--accent2));
+      color: var(--accentText);
+      font-size:15px;
+      font-weight:900;
+      letter-spacing:.1px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      user-select:none;
+      box-shadow: 0 14px 26px color-mix(in oklab, var(--accent) 22%, transparent);
+      transition: transform .15s ease, filter .15s ease, opacity .15s ease;
+    }
+    .mainButton:active{ transform: translateY(1px); }
+    .mainButton.disabled{
+      opacity:.45;
+      cursor:not-allowed;
+      box-shadow:none;
+    }
+
+    /* ======= Center screens ======= */
+    .center{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      text-align:center;
+      padding: 22px 18px 96px 18px;
+      gap:12px;
+    }
+    .bigicon{
+      width:72px;height:72px;border-radius:22px;
+      display:grid;place-items:center;
+      border:1px solid var(--border);
+      background: var(--surface);
+      box-shadow: 0 10px 24px color-mix(in oklab, #000 10%, transparent);
+      font-size:34px;
+    }
+    .spinner{
+      width:26px;height:26px;border-radius:50%;
+      border:3px solid color-mix(in oklab, var(--text) 14%, transparent);
+      border-top-color: color-mix(in oklab, var(--text) 55%, transparent);
+      animation: spin 1s linear infinite;
+      margin-top: 6px;
+    }
+    @keyframes spin{ to{ transform: rotate(360deg);} }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:12.5px;
+      color: color-mix(in oklab, var(--text) 82%, transparent);
+      line-height:1.45;
+      white-space:pre-line;
+    }
+
+    /* ======= Calendar modal ======= */
+    .modalOverlay{
+      position:absolute;
+      inset:0;
+      background: rgba(0,0,0,.28);
+      display:none;
+      align-items:flex-end;
+      justify-content:center;
+      z-index:50;
+    }
+    html[data-theme="dark"] .modalOverlay{ background: rgba(0,0,0,.50); }
+    .modalOverlay.show{ display:flex; animation: overlayIn .12s ease-out; }
+    @keyframes overlayIn{ from{ opacity:0;} to{opacity:1;} }
+
+    .sheet{
+      width:100%;
+      border-top-left-radius: 22px;
+      border-top-right-radius: 22px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 14px;
+      animation: sheetIn .18s ease-out;
+    }
+    @keyframes sheetIn{ from{ transform: translateY(14px); opacity:.7;} to{ transform:none; opacity:1;} }
+    .sheetHead{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom: 10px;
+    }
+    .sheetTitle{
+      font-weight:900;
+      font-size:14px;
+    }
+    .sheetClose{
+      border:1px solid var(--border);
+      background: color-mix(in oklab, var(--text) 4%, transparent);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size:12px;
+      color: var(--muted);
+      cursor:pointer;
+    }
+    .calHead{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin: 10px 0 8px;
+    }
+    .calNav{
+      display:flex; gap:8px; align-items:center;
+    }
+    .calBtn{
+      width:34px;height:34px;border-radius:11px;
+      border:1px solid var(--border);
+      background: var(--surface2);
+      cursor:pointer;
+      display:grid;place-items:center;
+      color: var(--text);
+      font-weight:900;
+    }
+    .calMonth{
+      font-weight:900;
+      font-size:14px;
+    }
+    .calGrid{
+      display:grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap:6px;
+      margin-top: 8px;
+    }
+    .dow{
+      text-align:center;
+      font-size:11px;
+      color: var(--muted);
+      padding: 4px 0;
+      font-weight:800;
+    }
+    .day{
+      height:40px;
+      border-radius: 12px;
+      border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+      background: var(--surface2);
+      cursor:pointer;
+      display:grid;
+      place-items:center;
+      font-weight:900;
+      color: var(--text);
+      user-select:none;
+    }
+    .day.muted{ opacity:.45; cursor:not-allowed; }
+    .day.today{ border-color: color-mix(in oklab, var(--accent) 35%, var(--border)); }
+    .day.selected{
+      background: color-mix(in oklab, var(--accent) 18%, transparent);
+      border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+    }
+    .sheetFooter{
+      display:flex;
+      gap:10px;
+      margin-top: 12px;
+    }
+    .btnSmall{
+      flex:1;
+      height:44px;
+      border-radius: 14px;
+      border:1px solid var(--border);
+      background: var(--surface2);
+      cursor:pointer;
+      font-weight:900;
+      color: var(--text);
+    }
+    .btnSmall.primary{
+      border-color: color-mix(in oklab, var(--accent) 30%, transparent);
+      background: linear-gradient(180deg, var(--accent), var(--accent2));
+      color: var(--accentText);
+    }
+
+    /* ======= Right panel ======= */
+    .panel{
+      border:1px solid var(--border);
+      border-radius: 18px;
+      background: color-mix(in oklab, var(--surface) 86%, transparent);
+      box-shadow: var(--shadow2);
+      overflow:hidden;
+    }
+    .panelHeader{
+      padding: 12px 14px;
+      border-bottom:1px solid color-mix(in oklab, var(--border) 80%, transparent);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .panelTitle{
+      font-weight:900;
+      letter-spacing:-.2px;
+      font-size:14px;
+    }
+    .panelSub{
+      font-size:12px;
+      color: var(--muted);
+    }
+    .panelBody{
+      padding: 12px 14px 14px 14px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .note{
+      border:1px solid color-mix(in oklab, var(--border) 85%, transparent);
+      border-radius: 16px;
+      padding: 12px;
+      background: color-mix(in oklab, var(--surface2) 82%, transparent);
+    }
+    .noteTitle{
+      font-weight:900;
+      font-size:13px;
+      margin-bottom: 6px;
+    }
+    .noteText{
+      font-size:13px;
+      color: var(--muted);
+      line-height:1.45;
+      margin:0;
+    }
+    .miniRow{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+  </style>
+
+  <script src="./cities.js"></script>
+</head>
+
+<body>
+  <div class="page">
+    <!-- LEFT -->
+    <div class="leftCol" style="width:min(980px,100%);">
+
+      <div class="topnote">
+        <div class="left">
+          <span class="pill">Realistic Proto</span>
+          <div class="hint">
+            Полная имитация Mini App: <b>навигация</b>, <b>календарь</b>, <b>автокомплит городов</b>, <b>темы</b>.  
+            Автокомплит появляется после <b>3 символов</b>.
+          </div>
+        </div>
+        <span class="pill" id="citiesStat">cities: …</span>
+      </div>
+
+      <div class="device">
+        <div class="device-inner">
+          <div class="statusbar">
+            <span id="clock">19:42</span>
+            <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+          </div>
+
+          <div class="app" id="app">
+
+            <!-- Calendar modal -->
+            <div class="modalOverlay" id="calOverlay" role="dialog" aria-modal="true" aria-label="Выбор даты">
+              <div class="sheet">
+                <div class="sheetHead">
+                  <div class="sheetTitle">Выберите дату</div>
+                  <button class="sheetClose" id="calCloseBtn" type="button">Закрыть</button>
+                </div>
+
+                <div class="calHead">
+                  <div class="calNav">
+                    <button class="calBtn" id="calPrev" type="button">‹</button>
+                    <button class="calBtn" id="calNext" type="button">›</button>
+                  </div>
+                  <div class="calMonth" id="calMonth">…</div>
+                  <span class="badge" id="calHint">сегодня</span>
+                </div>
+
+                <div class="calGrid" id="calGrid">
+                  <!-- injected -->
+                </div>
+
+                <div class="sheetFooter">
+                  <button class="btnSmall" id="calClear" type="button">Как можно скорее</button>
+                  <button class="btnSmall primary" id="calApply" type="button">Выбрать</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Screens -->
+            <div class="screen active" id="screen-loading" data-title="Mini App">
+              <div class="tgbar">
+                <div class="backBtn" id="backBtn" title="Назад">‹</div>
+                <div class="tgtitle" id="tgTitle">Mini App</div>
+                <div class="tgright">
+                  <div class="chipBtn" id="themeBtn">Тема</div>
+                </div>
+              </div>
+
+              <div class="center">
+                <div class="bigicon" style="font-weight:900;">FE</div>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <div style="font-size:18px;font-weight:900;letter-spacing:-.2px;">Fortuna Express</div>
+                  <div style="font-size:13px;color:var(--muted);">Загружаем сервис оформления перевозки…</div>
+                </div>
+                <div class="spinner" aria-hidden="true"></div>
+              </div>
+
+              <div class="mainButtonWrap">
+                <div class="mainButton" id="mainBtn">Перейти к демо</div>
+              </div>
+            </div>
+
+            <div class="screen" id="screen-main" data-title="Fortuna Express">
+              <div class="tgbar">
+                <div class="backBtn" id="backBtn2" title="Назад">‹</div>
+                <div class="tgtitle">Fortuna Express</div>
+                <div class="tgright">
+                  <div class="chipBtn" id="themeBtn2">Тема</div>
+                </div>
+              </div>
+
+              <div class="body">
+                <div class="card">
+                  <h1>Оформление перевозки</h1>
+                  <p>Заполните заявку за 1 минуту – 3 коротких шага, без регистрации.</p>
+                  <div class="info">
+                    <span class="badge">Важно</span>
+                    <div>
+                      Персональные данные и документы передаются напрямую из CRM в Mini App по защищённому каналу.  
+                      В уведомлениях Telegram персональных данных нет.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="sectionTitle">Как это работает</div>
+                  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <span class="badge">Маршрут</span>
+                    <span class="badge">Груз</span>
+                    <span class="badge">Дата</span>
+                    <span class="badge">Готово</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mainButtonWrap">
+                <div class="mainButton" id="mainBtn2">Оформить заявку</div>
+              </div>
+            </div>
+
+            <div class="screen" id="screen-route" data-title="Заявка – шаг 1 из 3">
+              <div class="tgbar">
+                <div class="backBtn" id="backBtn3" title="Назад">‹</div>
+                <div class="tgtitle">Заявка – шаг 1 из 3</div>
+                <div class="tgright">
+                  <div class="chipBtn" id="themeBtn3">Тема</div>
+                </div>
+              </div>
+
+              <div class="body">
+                <div class="card">
+                  <div class="sectionTitle">Маршрут перевозки</div>
+                  <p>Укажите города отправления и назначения.</p>
+
+                  <div class="field" id="fieldFrom">
+                    <div class="label">Откуда</div>
+                    <input id="fromCity" autocomplete="off" placeholder="Москва" />
+                    <div class="ac" id="acFrom"></div>
+                    <div class="errorText">Введите город (минимум 3 буквы и выберите из списка).</div>
+                  </div>
+
+                  <div class="field" id="fieldTo">
+                    <div class="label">Куда</div>
+                    <input id="toCity" autocomplete="off" placeholder="Санкт-Петербург" />
+                    <div class="ac" id="acTo"></div>
+                    <div class="errorText">Введите город (минимум 3 буквы и выберите из списка).</div>
+                  </div>
+
+                  <div style="margin-top:14px;" class="info">
+                    <span class="badge">Подсказка</span>
+                    <div>В MVP достаточно указать только города – адреса можно уточнить позже с менеджером.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mainButtonWrap">
+                <div class="mainButton disabled" id="mainBtn3">Далее</div>
+              </div>
+            </div>
+
+            <div class="screen" id="screen-cargo" data-title="Заявка – шаг 2 из 3">
+              <div class="tgbar">
+                <div class="backBtn" id="backBtn4" title="Назад">‹</div>
+                <div class="tgtitle">Заявка – шаг 2 из 3</div>
+                <div class="tgright">
+                  <div class="chipBtn" id="themeBtn4">Тема</div>
+                </div>
+              </div>
+
+              <div class="body">
+                <div class="card">
+                  <div class="sectionTitle">Параметры груза</div>
+                  <p>Минимум данных – для быстрой отправки.</p>
+
+                  <div class="sectionTitle" style="margin-top:6px;">Тип груза</div>
+                  <div class="radio" id="cargoType">
+                    <button type="button" data-value="standard" class="selected">
+                      <span class="rb"></span>
+                      <span>Стандартный <small>Обычные товары без спец. условий</small></span>
+                    </button>
+                    <button type="button" data-value="pallets">
+                      <span class="rb"></span>
+                      <span>Паллеты <small>Паллетная перевозка</small></span>
+                    </button>
+                    <button type="button" data-value="docs">
+                      <span class="rb"></span>
+                      <span>Документы <small>Лёгкие отправления</small></span>
+                    </button>
+                    <button type="button" data-value="other">
+                      <span class="rb"></span>
+                      <span>Другое <small>Если тип груза нестандартный</small></span>
+                    </button>
+                  </div>
+
+                  <div class="field" id="fieldWeight">
+                    <div class="label">Примерный вес или объём</div>
+                    <input id="weight" placeholder="например: 500 кг или 2 паллеты" />
+                    <div class="errorText">Заполните поле.</div>
+                  </div>
+
+                  <div style="margin-top:14px;" class="info">
+                    <span class="badge">Важно</span>
+                    <div>Габариты и дополнительные условия не требуются в MVP – их уточнит менеджер при необходимости.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mainButtonWrap">
+                <div class="mainButton disabled" id="mainBtn4">Далее</div>
+              </div>
+            </div>
+
+            <div class="screen" id="screen-date" data-title="Заявка – шаг 3 из 3">
+              <div class="tgbar">
+                <div class="backBtn" id="backBtn5" title="Назад">‹</div>
+                <div class="tgtitle">Заявка – шаг 3 из 3</div>
+                <div class="tgright">
+                  <div class="chipBtn" id="themeBtn5">Тема</div>
+                </div>
+              </div>
+
+              <div class="body">
+                <div class="card">
+                  <div class="sectionTitle">Дата отправки</div>
+                  <p>Можно выбрать дату или “как можно скорее”.</p>
+
+                  <div class="radio" id="dateMode">
+                    <button type="button" data-value="asap" class="selected">
+                      <span class="rb"></span>
+                      <span>Как можно скорее</span>
+                    </button>
+                    <button type="button" data-value="pick">
+                      <span class="rb"></span>
+                      <span>Выбрать дату <small>в MVP можно указать ориентировочно</small></span>
+                    </button>
+                  </div>
+
+                  <div class="field" id="fieldDate" style="display:none;">
+                    <div class="label">Выбранная дата</div>
+                    <input id="dateValue" readonly placeholder="Нажмите, чтобы выбрать дату" />
+                  </div>
+
+                  <div style="margin-top:14px;" class="info">
+                    <span class="badge">Подсказка</span>
+                    <div>Даже если дата неизвестна, заявку можно отправить – менеджер уточнит детали.</div>
+                  </div>
+
+                  <div class="card" style="margin-top:12px; background: var(--surface2);">
+                    <div class="sectionTitle">Демо ветки “Телефон”</div>
+                    <p style="margin-bottom:10px;">Для демонстрации можно включить/выключить запрос телефона.</p>
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                      <span class="badge" id="phoneToggleBadge">Телефон: включён</span>
+                      <div class="chipBtn" id="phoneToggle">Переключить</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mainButtonWrap">
+                <div class="mainButton" id="mainBtn5">Отправить заявку</div>
+              </div>
+            </div>
+
+            <div class="screen" id="screen-phone" data-title="Контактные данные">
+              <div class="tgbar">
+                <div class="backBtn" id="backBtn6" title="Назад">‹</div>
+                <div class="tgtitle">Контактные данные</div>
+                <div class="tgright">
+                  <div class="chipBtn" id="themeBtn6">Тема</div>
+                </div>
+              </div>
+
+              <div class="body">
+                <div class="card">
+                  <div class="sectionTitle">Контактный телефон</div>
+                  <p>Нужен, чтобы менеджер мог связаться с вами по заявке.</p>
+
+                  <div class="field" id="fieldPhone">
+                    <div class="label">Телефон</div>
+                    <input id="phone" placeholder="+7 ___ ___-__-__" />
+                    <div class="errorText">Введите номер телефона.</div>
+                  </div>
+
+                  <div style="margin-top:14px;" class="info">
+                    <span class="badge">Безопасность</span>
+                    <div>Телефон передаётся напрямую в CRM по защищённому каналу и не отправляется через сообщения Telegram.</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mainButtonWrap">
+                <div class="mainButton disabled" id="mainBtn6">Подтвердить и отправить</div>
+              </div>
+            </div>
+
+            <div class="screen" id="screen-success" data-title="Готово">
+              <div class="tgbar">
+                <div class="backBtn" id="backBtn7" title="Назад">‹</div>
+                <div class="tgtitle">Готово</div>
+                <div class="tgright">
+                  <div class="chipBtn" id="themeBtn7">Тема</div>
+                </div>
+              </div>
+
+              <div class="center">
+                <div class="bigicon">✅</div>
+                <div style="font-size:20px;font-weight:900;letter-spacing:-.2px;">Заявка отправлена</div>
+                <div style="color:var(--muted); font-size:13.5px; line-height:1.5;">
+                  Менеджер свяжется с вами и уточнит детали при необходимости.
+                </div>
+
+                <div class="card" style="width:100%; text-align:left;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px;">
+                    <span class="badge ok">Принята</span>
+                    <span class="badge">MVP</span>
+                  </div>
+                  <div class="mono" id="successText">…</div>
+                </div>
+              </div>
+
+              <div class="mainButtonWrap">
+                <div class="mainButton" id="mainBtn7">На главную</div>
+              </div>
+            </div>
+
+            <div class="screen" id="screen-error" data-title="Ошибка">
+              <div class="tgbar">
+                <div class="backBtn" id="backBtn8" title="Назад">‹</div>
+                <div class="tgtitle">Ошибка</div>
+                <div class="tgright">
+                  <div class="chipBtn" id="themeBtn8">Тема</div>
+                </div>
+              </div>
+
+              <div class="center">
+                <div class="bigicon">⚠️</div>
+                <div style="font-size:20px;font-weight:900;letter-spacing:-.2px;">Что-то пошло не так</div>
+                <div style="color:var(--muted); font-size:13.5px; line-height:1.5;">
+                  Не удалось отправить заявку. Проверьте соединение и попробуйте ещё раз.
+                </div>
+              </div>
+
+              <div class="mainButtonWrap">
+                <div class="mainButton" id="mainBtn8">Повторить</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="rightCol">
+      <div class="panel">
+        <div class="panelHeader">
+          <div>
+            <div class="panelTitle">Панель демонстрации</div>
+            <div class="panelSub">Быстрые действия для показа заказчику</div>
+          </div>
+          <span class="pill" id="themePill">theme: auto</span>
+        </div>
+        <div class="panelBody">
+
+          <div class="note">
+            <div class="noteTitle">Переключение тем</div>
+            <p class="noteText">Нажмите “Тема” в верхней панели Mini App или используйте кнопки ниже.</p>
+            <div class="miniRow" style="margin-top:10px;">
+              <div class="chipBtn" id="setAuto">Auto</div>
+              <div class="chipBtn" id="setLight">Light</div>
+              <div class="chipBtn" id="setDark">Dark</div>
+            </div>
+          </div>
+
+          <div class="note">
+            <div class="noteTitle">Быстрая навигация</div>
+            <p class="noteText">Можно мгновенно перейти к нужному экрану для показа.</p>
+            <div class="miniRow" style="margin-top:10px;">
+              <div class="chipBtn" data-jump="loading">Loading</div>
+              <div class="chipBtn" data-jump="main">Главный</div>
+              <div class="chipBtn" data-jump="route">Маршрут</div>
+              <div class="chipBtn" data-jump="cargo">Груз</div>
+              <div class="chipBtn" data-jump="date">Дата</div>
+              <div class="chipBtn" data-jump="phone">Телефон</div>
+              <div class="chipBtn" data-jump="success">Успех</div>
+              <div class="chipBtn" data-jump="error">Ошибка</div>
+            </div>
+          </div>
+
+          <div class="note">
+            <div class="noteTitle">Про “все города РФ”</div>
+            <p class="noteText">
+              Автокомплит готов на 100%.  
+              Чтобы действительно покрыть все города РФ, замените массив <b>window.CITIES_RU</b> в <b>cities.js</b> на экспорт из ФИАС/КЛАДР (без изменений кода).
+            </p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ============================================================
+       Realistic Mini App Prototype (Vanilla JS)
+       - Screen navigation with stack (Back like Telegram)
+       - MainButton per-screen
+       - City autocomplete after 3 chars
+       - Calendar date picker (bottom sheet)
+       - Light/Dark toggle (auto/light/dark) with persistence
+       ============================================================ */
+
+    // ---- Data (cities.js) ----
+    const CITIES = Array.isArray(window.CITIES_RU) ? window.CITIES_RU : [];
+    const citiesStat = document.getElementById('citiesStat');
+    citiesStat.textContent = `cities: ${CITIES.length}`;
+
+    // Normalize helper
+    const normalize = (s) => (s || '').toString().trim().toLowerCase().replace(/ё/g,'е');
+
+    // ---- Theme ----
+    const themePill = document.getElementById('themePill');
+    function applyTheme(mode){
+      // mode: 'auto' | 'light' | 'dark'
+      if(mode === 'auto'){
+        document.documentElement.removeAttribute('data-theme');
+        themePill.textContent = 'theme: auto';
+      } else {
+        document.documentElement.setAttribute('data-theme', mode);
+        themePill.textContent = `theme: ${mode}`;
+      }
+      localStorage.setItem('demo_theme_mode', mode);
+    }
+    function cycleTheme(){
+      const current = localStorage.getItem('demo_theme_mode') || 'auto';
+      const next = current === 'auto' ? 'light' : (current === 'light' ? 'dark' : 'auto');
+      applyTheme(next);
+    }
+    applyTheme(localStorage.getItem('demo_theme_mode') || 'auto');
+
+    document.getElementById('setAuto').onclick = () => applyTheme('auto');
+    document.getElementById('setLight').onclick = () => applyTheme('light');
+    document.getElementById('setDark').onclick = () => applyTheme('dark');
+
+    // Bind theme buttons in tgbar
+    for(const id of ['themeBtn','themeBtn2','themeBtn3','themeBtn4','themeBtn5','themeBtn6','themeBtn7','themeBtn8']){
+      const el = document.getElementById(id);
+      if(el) el.onclick = cycleTheme;
+    }
+
+    // ---- Clock ----
+    const clockEl = document.getElementById('clock');
+    function tickClock(){
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      clockEl.textContent = `${hh}:${mm}`;
+    }
+    tickClock();
+    setInterval(tickClock, 10_000);
+
+    // ---- Screen navigation ----
+    const screens = {
+      loading: document.getElementById('screen-loading'),
+      main: document.getElementById('screen-main'),
+      route: document.getElementById('screen-route'),
+      cargo: document.getElementById('screen-cargo'),
+      date: document.getElementById('screen-date'),
+      phone: document.getElementById('screen-phone'),
+      success: document.getElementById('screen-success'),
+      error: document.getElementById('screen-error'),
+    };
+
+    const backBtn = document.getElementById('backBtn');
+    const tgTitle = document.getElementById('tgTitle');
+
+    const navStack = []; // previous screen keys
+    let current = 'loading';
+
+    function setActiveScreen(key, push=true){
+      if(!screens[key]) return;
+      // deactivate current
+      screens[current].classList.remove('active');
+      if(push) navStack.push(current);
+      current = key;
+      screens[current].classList.add('active');
+
+      // update top title of current tgbar if needed
+      // (each screen has its own tgbar title; keep back handler global-ish)
+      updateBackVisibility();
+      updatePerScreenMainButton();
+    }
+
+    function updateBackVisibility(){
+      // Back is per-screen in this prototype (each has its own backBtnX)
+      // We'll wire them individually.
+    }
+
+    function goBack(){
+      const prev = navStack.pop();
+      if(!prev) return;
+      screens[current].classList.remove('active');
+      current = prev;
+      screens[current].classList.add('active');
+      updatePerScreenMainButton();
+    }
+
+    // Wire back buttons
+    const backIds = ['backBtn','backBtn2','backBtn3','backBtn4','backBtn5','backBtn6','backBtn7','backBtn8'];
+    for(const id of backIds){
+      const el = document.getElementById(id);
+      if(el) el.onclick = () => {
+        // If stack empty, go to main from non-loading for demo convenience
+        if(navStack.length === 0){
+          if(current !== 'main') { setActiveScreen('main', false); return; }
+          return;
+        }
+        goBack();
+      };
+    }
+
+    // Quick jumps (right panel)
+    document.querySelectorAll('[data-jump]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-jump');
+        if(screens[key]){
+          navStack.length = 0;
+          Object.values(screens).forEach(s=>s.classList.remove('active'));
+          current = key;
+          screens[current].classList.add('active');
+          updatePerScreenMainButton();
+        }
+      });
+    });
+
+    // ---- Form state ----
+    const state = {
+      route: { from: null, to: null },
+      cargo: { type: 'standard', weight: '' },
+      date: { mode: 'asap', value: null }, // value: Date or null
+      phoneRequired: true,
+      phone: '',
+    };
+
+    // ---- Route: Autocomplete ----
+    const fromInput = document.getElementById('fromCity');
+    const toInput = document.getElementById('toCity');
+    const acFrom = document.getElementById('acFrom');
+    const acTo = document.getElementById('acTo');
+    const fieldFrom = document.getElementById('fieldFrom');
+    const fieldTo = document.getElementById('fieldTo');
+    const mainBtn3 = document.getElementById('mainBtn3');
+
+    // We require "picked from list" to emulate real guided input.
+    let fromPicked = false;
+    let toPicked = false;
+
+    function renderAC(container, items, onPick, activeIndex=0){
+      container.innerHTML = '';
+      if(items.length === 0){
+        container.classList.remove('show');
+        return;
+      }
+      items.slice(0, 12).forEach((it, idx) => {
+        const row = document.createElement('div');
+        row.className = 'acItem' + (idx === activeIndex ? ' active' : '');
+        row.innerHTML = `<span class="acCity">${it.name}</span><span class="acRegion">${it.region || ''}</span>`;
+        row.onclick = () => onPick(it);
+        container.appendChild(row);
+      });
+      container.classList.add('show');
+    }
+
+    function findCities(query){
+      const q = normalize(query);
+      if(q.length < 3) return [];
+      // startsWith first, then contains
+      const starts = [];
+      const contains = [];
+      for(const c of CITIES){
+        const n = normalize(c.name);
+        if(n.startsWith(q)) starts.push(c);
+        else if(n.includes(q)) contains.push(c);
+        if(starts.length >= 12 && contains.length >= 12) break;
+      }
+      return [...starts, ...contains].slice(0, 12);
+    }
+
+    function closeAllAC(){
+      acFrom.classList.remove('show');
+      acTo.classList.remove('show');
+    }
+
+    function validateRoute(){
+      const ok = !!state.route.from && !!state.route.to && fromPicked && toPicked;
+      mainBtn3.classList.toggle('disabled', !ok);
+      fieldFrom.classList.toggle('invalid', !(state.route.from && fromPicked));
+      fieldTo.classList.toggle('invalid', !(state.route.to && toPicked));
+      return ok;
+    }
+
+    function attachAutocomplete(inputEl, container, setValue){
+      let items = [];
+      let active = 0;
+
+      inputEl.addEventListener('input', () => {
+        const v = inputEl.value;
+        items = findCities(v);
+        active = 0;
+        renderAC(container, items, (it)=>{
+          inputEl.value = it.name;
+          setValue(it);
+          container.classList.remove('show');
+          validateRoute();
+        }, active);
+
+        // if user types manually – mark as not picked
+        setValue(null);
+        validateRoute();
+      });
+
+      inputEl.addEventListener('keydown', (e) => {
+        if(!container.classList.contains('show')) return;
+        if(e.key === 'ArrowDown'){
+          e.preventDefault();
+          active = Math.min(active + 1, Math.min(items.length,12) - 1);
+          renderAC(container, items, (it)=>{
+            inputEl.value = it.name;
+            setValue(it);
+            container.classList.remove('show');
+            validateRoute();
+          }, active);
+        } else if(e.key === 'ArrowUp'){
+          e.preventDefault();
+          active = Math.max(active - 1, 0);
+          renderAC(container, items, (it)=>{
+            inputEl.value = it.name;
+            setValue(it);
+            container.classList.remove('show');
+            validateRoute();
+          }, active);
+        } else if(e.key === 'Enter'){
+          e.preventDefault();
+          const it = items[active];
+          if(it){
+            inputEl.value = it.name;
+            setValue(it);
+            container.classList.remove('show');
+            validateRoute();
+          }
+        } else if(e.key === 'Escape'){
+          container.classList.remove('show');
+        }
+      });
+
+      inputEl.addEventListener('focus', () => {
+        const items2 = findCities(inputEl.value);
+        if(items2.length) {
+          items = items2;
+          active = 0;
+          renderAC(container, items, (it)=>{
+            inputEl.value = it.name;
+            setValue(it);
+            container.classList.remove('show');
+            validateRoute();
+          }, active);
+        }
+      });
+    }
+
+    attachAutocomplete(fromInput, acFrom, (it)=>{
+      if(it){
+        state.route.from = it;
+        fromPicked = true;
+      } else {
+        state.route.from = null;
+        fromPicked = false;
+      }
+    });
+
+    attachAutocomplete(toInput, acTo, (it)=>{
+      if(it){
+        state.route.to = it;
+        toPicked = true;
+      } else {
+        state.route.to = null;
+        toPicked = false;
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      // close autocomplete when clicking outside fields
+      if(!fieldFrom.contains(e.target) && !fieldTo.contains(e.target)){
+        closeAllAC();
+      }
+    });
+
+    // ---- Cargo ----
+    const cargoTypeEl = document.getElementById('cargoType');
+    const weightEl = document.getElementById('weight');
+    const fieldWeight = document.getElementById('fieldWeight');
+    const mainBtn4 = document.getElementById('mainBtn4');
+
+    cargoTypeEl.querySelectorAll('button').forEach(btn=>{
+      btn.onclick = () => {
+        cargoTypeEl.querySelectorAll('button').forEach(b=>b.classList.remove('selected'));
+        btn.classList.add('selected');
+        state.cargo.type = btn.getAttribute('data-value');
+        validateCargo();
+      };
+    });
+
+    weightEl.addEventListener('input', ()=>{
+      state.cargo.weight = weightEl.value.trim();
+      validateCargo();
+    });
+
+    function validateCargo(){
+      const ok = state.cargo.weight.length > 0;
+      mainBtn4.classList.toggle('disabled', !ok);
+      fieldWeight.classList.toggle('invalid', !ok);
+      return ok;
+    }
+
+    // ---- Date screen + Calendar ----
+    const dateModeEl = document.getElementById('dateMode');
+    const fieldDate = document.getElementById('fieldDate');
+    const dateValue = document.getElementById('dateValue');
+    const mainBtn5 = document.getElementById('mainBtn5');
+
+    dateModeEl.querySelectorAll('button').forEach(btn=>{
+      btn.onclick = () => {
+        dateModeEl.querySelectorAll('button').forEach(b=>b.classList.remove('selected'));
+        btn.classList.add('selected');
+        const mode = btn.getAttribute('data-value');
+        state.date.mode = mode;
+        if(mode === 'asap'){
+          state.date.value = null;
+          fieldDate.style.display = 'none';
+          dateValue.value = '';
+        } else {
+          fieldDate.style.display = 'block';
+          // open calendar for realistic UX
+          openCalendar();
+        }
+      };
+    });
+
+    dateValue.addEventListener('click', ()=> openCalendar());
+
+    // Calendar modal
+    const calOverlay = document.getElementById('calOverlay');
+    const calGrid = document.getElementById('calGrid');
+    const calMonth = document.getElementById('calMonth');
+    const calPrev = document.getElementById('calPrev');
+    const calNext = document.getElementById('calNext');
+    const calCloseBtn = document.getElementById('calCloseBtn');
+    const calClear = document.getElementById('calClear');
+    const calApply = document.getElementById('calApply');
+
+    let calCursor = new Date(); // month cursor
+    let calSelected = null;     // Date or null
+    let calTemp = null;
+
+    function startOfDay(d){
+      const x = new Date(d);
+      x.setHours(0,0,0,0);
+      return x;
+    }
+    function sameDay(a,b){
+      return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+    }
+    function fmtDate(d){
+      const dd = String(d.getDate()).padStart(2,'0');
+      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const yy = d.getFullYear();
+      return `${dd}.${mm}.${yy}`;
+    }
+    const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    const DOW = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+    function renderCalendar(){
+      calGrid.innerHTML = '';
+      // header DOW
+      for(const d of DOW){
+        const el = document.createElement('div');
+        el.className = 'dow';
+        el.textContent = d;
+        calGrid.appendChild(el);
+      }
+
+      const year = calCursor.getFullYear();
+      const month = calCursor.getMonth();
+      calMonth.textContent = `${MONTHS[month]} ${year}`;
+
+      const first = new Date(year, month, 1);
+      const last = new Date(year, month+1, 0);
+
+      // convert JS Sunday=0 to Monday-first index
+      const firstDow = (first.getDay() + 6) % 7; // Mon=0..Sun=6
+      const totalDays = last.getDate();
+
+      // fill leading blanks
+      for(let i=0;i<firstDow;i++){
+        const blank = document.createElement('div');
+        blank.style.height = '40px';
+        calGrid.appendChild(blank);
+      }
+
+      const today = startOfDay(new Date());
+      const minDate = today; // disable past dates
+      for(let day=1; day<=totalDays; day++){
+        const d = startOfDay(new Date(year, month, day));
+        const btn = document.createElement('div');
+        btn.className = 'day';
+        btn.textContent = String(day);
+
+        const isPast = d < minDate;
+        if(isPast){
+          btn.classList.add('muted');
+        } else {
+          btn.onclick = () => {
+            calTemp = d;
+            renderCalendar();
+          };
+        }
+        if(sameDay(d, today)) btn.classList.add('today');
+        if(sameDay(d, calTemp)) btn.classList.add('selected');
+
+        calGrid.appendChild(btn);
+      }
+    }
+
+    function openCalendar(){
+      // initialize
+      calSelected = state.date.value ? startOfDay(state.date.value) : null;
+      calTemp = calSelected || startOfDay(new Date());
+      calCursor = new Date(calTemp.getFullYear(), calTemp.getMonth(), 1);
+      renderCalendar();
+      calOverlay.classList.add('show');
+    }
+    function closeCalendar(){
+      calOverlay.classList.remove('show');
+    }
+
+    calPrev.onclick = () => {
+      calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth()-1, 1);
+      renderCalendar();
+    };
+    calNext.onclick = () => {
+      calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth()+1, 1);
+      renderCalendar();
+    };
+    calCloseBtn.onclick = closeCalendar;
+    calOverlay.addEventListener('click', (e)=>{
+      if(e.target === calOverlay) closeCalendar();
+    });
+
+    calClear.onclick = () => {
+      calTemp = null;
+      state.date.mode = 'asap';
+      state.date.value = null;
+      dateModeEl.querySelectorAll('button').forEach(b=>b.classList.remove('selected'));
+      dateModeEl.querySelector('[data-value="asap"]').classList.add('selected');
+      fieldDate.style.display = 'none';
+      dateValue.value = '';
+      closeCalendar();
+    };
+
+    calApply.onclick = () => {
+      if(calTemp){
+        state.date.mode = 'pick';
+        state.date.value = calTemp;
+        dateModeEl.querySelectorAll('button').forEach(b=>b.classList.remove('selected'));
+        dateModeEl.querySelector('[data-value="pick"]').classList.add('selected');
+        fieldDate.style.display = 'block';
+        dateValue.value = fmtDate(calTemp);
+      }
+      closeCalendar();
+    };
+
+    // ---- Phone toggle (demo) ----
+    const phoneToggle = document.getElementById('phoneToggle');
+    const phoneToggleBadge = document.getElementById('phoneToggleBadge');
+    function syncPhoneToggle(){
+      phoneToggleBadge.textContent = `Телефон: ${state.phoneRequired ? 'включён' : 'выключен'}`;
+    }
+    syncPhoneToggle();
+    phoneToggle.onclick = () => {
+      state.phoneRequired = !state.phoneRequired;
+      syncPhoneToggle();
+    };
+
+    // ---- Phone validation ----
+    const phoneEl = document.getElementById('phone');
+    const fieldPhone = document.getElementById('fieldPhone');
+    const mainBtn6 = document.getElementById('mainBtn6');
+
+    function normalizePhone(p){
+      return (p||'').replace(/[^\d+]/g,'').trim();
+    }
+    function validatePhone(){
+      const p = normalizePhone(phoneEl.value);
+      // simple demo rule: at least 10 digits
+      const digits = (p.match(/\d/g)||[]).length;
+      const ok = digits >= 10;
+      mainBtn6.classList.toggle('disabled', !ok);
+      fieldPhone.classList.toggle('invalid', !ok);
+      state.phone = phoneEl.value;
+      return ok;
+    }
+    phoneEl.addEventListener('input', validatePhone);
+
+    // ---- Success text ----
+    const successText = document.getElementById('successText');
+    function buildSuccess(){
+      const id = String(Math.floor(10000 + Math.random()*90000));
+      const from = state.route.from?.name || '—';
+      const to = state.route.to?.name || '—';
+      const when = state.date.mode === 'asap' ? 'Как можно скорее' : (state.date.value ? fmtDate(state.date.value) : '—');
+      const cargo = state.cargo.type;
+      const weight = state.cargo.weight || '—';
+      successText.textContent =
+`Заявка №${id}
+Маршрут: ${from} → ${to}
+Отправка: ${when}
+Груз: ${cargo}
+Объём: ${weight}
+Статус: Принята`;
+    }
+
+    // ---- Per-screen main buttons ----
+    const mainBtn = document.getElementById('mainBtn');
+    const mainBtn2 = document.getElementById('mainBtn2');
+    // mainBtn3,4,5,6 already
+    const mainBtn7 = document.getElementById('mainBtn7');
+    const mainBtn8 = document.getElementById('mainBtn8');
+
+    function updatePerScreenMainButton(){
+      // re-validate when entering screens
+      if(current === 'route') validateRoute();
+      if(current === 'cargo') validateCargo();
+      if(current === 'phone') validatePhone();
+    }
+
+    // ---- Button handlers ----
+    mainBtn.onclick = () => setActiveScreen('main');
+    mainBtn2.onclick = () => setActiveScreen('route');
+
+    mainBtn3.onclick = () => {
+      if(mainBtn3.classList.contains('disabled')) return;
+      setActiveScreen('cargo');
+    };
+
+    mainBtn4.onclick = () => {
+      if(mainBtn4.classList.contains('disabled')) return;
+      setActiveScreen('date');
+    };
+
+    mainBtn5.onclick = () => {
+      // send
+      // emulate possible error: if cities not set (shouldn't) or random? keep deterministic
+      if(!validateRoute() || !validateCargo()){
+        setActiveScreen('error');
+        return;
+      }
+      if(state.phoneRequired){
+        setActiveScreen('phone');
+      } else {
+        buildSuccess();
+        setActiveScreen('success');
+      }
+    };
+
+    mainBtn6.onclick = () => {
+      if(mainBtn6.classList.contains('disabled')) return;
+      buildSuccess();
+      setActiveScreen('success');
+    };
+
+    mainBtn7.onclick = () => {
+      // reset stack and go main
+      navStack.length = 0;
+      Object.values(screens).forEach(s=>s.classList.remove('active'));
+      current = 'main';
+      screens[current].classList.add('active');
+      updatePerScreenMainButton();
+    };
+
+    mainBtn8.onclick = () => {
+      // retry goes to date
+      setActiveScreen('date');
+    };
+
+    // Demo initial transition loading -> main after a short delay (realistic)
+    setTimeout(() => {
+      // only if still on loading
+      if(current === 'loading'){
+        // keep user control too, but auto makes it feel real
+        setActiveScreen('main');
+      }
+    }, 900);
+
+    // Initial screen already active = loading
+    // Ensure route buttons disabled initially
+    validateRoute();
+    validateCargo();
+    validatePhone();
+  </script>
+</body>
+</html>

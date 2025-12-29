@@ -2,8 +2,7 @@
 
 const { logEvent } = require('../logger');
 const { vendProduct } = require('../services/vendingControllerClient');
-
-const PAYMENT_DELAY_MS = Number(process.env.PAYMENT_DELAY_MS || 5000);
+const { processPayment } = require('../services/paymentDevice');
 const PRICE_SCALE = 100;
 
 // Support Node < 18, where global fetch may be missing
@@ -212,7 +211,6 @@ const normalizeMatrixPayload = (matrixRows, catalogRows) => {
     .filter((item) => item.cellNumber);
 };
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Возвращает матрицу продуктов для фронта.
@@ -283,16 +281,30 @@ const startSale = async (payload) => {
 
   const product = await validatePayload(payload);
 
-  await delay(PAYMENT_DELAY_MS);
+  try {
+    await processPayment({
+      cellNumber: Number(product.cellNumber),
+      price: product.price,
+      productId: product.id ?? null,
+    });
+  } catch (error) {
+    const statusCode =
+      error?.statusCode && Number.isInteger(error.statusCode)
+        ? error.statusCode
+        : 402;
+    const message = error?.message || 'Payment failed';
 
-  if (Number(product.cellNumber) === 1) {
-    const error = new Error('Оплата отклонена. Попробуйте выбрать другой товар.');
-    error.statusCode = 402;
     logEvent('client.startSale.failed', {
       cellNumber: product.cellNumber,
       productId: product.id ?? null,
+      message,
+      code: error?.code ?? null,
     });
-    throw error;
+
+    const wrappedError = new Error(message);
+    wrappedError.statusCode = statusCode;
+    wrappedError.code = error?.code;
+    throw wrappedError;
   }
 
   logEvent('client.startSale.accepted', {

@@ -41,6 +41,20 @@ node vending-http-api.mjs /dev/ttyUSB0 3000
 * `VENDING_HTTP_PORT` — HTTP-порт (по умолчанию `3000`)
 * `VENDING_BAUD_RATE` — скорость порта (по умолчанию `9600`)
 * `VENDING_BASE_PATH` — базовый путь API (по умолчанию `/api/v1`)
+* `VENDING_EMULATOR` — включить эмуляцию контроллера (`true`/`false`, по умолчанию `false`)
+
+Эмуляцию можно включить так:
+
+```bash
+VENDING_EMULATOR=1 node vending-http-api.mjs
+# или
+node vending-http-api.mjs --emulator
+```
+
+Для переключения в рантайме доступны эндпоинты:
+
+* `GET {basePath}/emulation/controller` → `{ "success": true, "data": { "enabled": boolean } }`
+* `POST {basePath}/emulation/controller` с `{ "enabled": boolean }`
 
 Пример для pm2:
 

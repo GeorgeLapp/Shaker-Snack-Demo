@@ -151,6 +151,7 @@ import {
   VendingControllerError,
   ERROR_CODES,
 } from './vending-controller.mjs';
+import { EmulatedVendingController } from './vending-controller-emulator.mjs';
 
 /* ========================================================================== */
 /*                           ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ                          */
@@ -222,6 +223,152 @@ function asyncRoute(fn) {
   };
 }
 
+const INVALID_ARGUMENT_MESSAGE = 'Invalid method argument';
+const PORT_NOT_OPEN_MESSAGE = 'Serial port is not open';
+
+const TRUE_VALUES = new Set(['1', 'true', 'yes', 'y', 'on']);
+const FALSE_VALUES = new Set(['0', 'false', 'no', 'n', 'off']);
+
+function parseBooleanFlag(value, fallback = false) {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (TRUE_VALUES.has(normalized)) return true;
+  if (FALSE_VALUES.has(normalized)) return false;
+  return fallback;
+}
+
+const EMULATOR_FLAG_NAMES = new Set(['--emulator', '--emu']);
+const HARDWARE_FLAG_NAMES = new Set(['--hardware', '--no-emulator']);
+
+function parseCliArgs(argv) {
+  const emulatorFlag = argv.some((arg) => EMULATOR_FLAG_NAMES.has(arg));
+  const hardwareFlag = argv.some((arg) => HARDWARE_FLAG_NAMES.has(arg));
+  const args = argv.filter(
+    (arg) => !EMULATOR_FLAG_NAMES.has(arg) && !HARDWARE_FLAG_NAMES.has(arg),
+  );
+  return { emulatorFlag, hardwareFlag, args };
+}
+
+function createSwitchableController({
+  hardwareController,
+  emulatorController,
+  emulationEnabled = false,
+} = {}) {
+  const state = {
+    emulationEnabled: Boolean(emulationEnabled),
+    hardwareOpen: false,
+    emulatorOpen: false,
+  };
+
+  const ensureHardware = () => {
+    if (!hardwareController) {
+      throw new VendingControllerError(
+        ERROR_CODES.PORT_NOT_OPEN,
+        PORT_NOT_OPEN_MESSAGE,
+        { reason: 'Hardware controller is not configured' },
+      );
+    }
+    return hardwareController;
+  };
+
+  const ensureEmulator = () => {
+    if (!emulatorController) {
+      throw new VendingControllerError(
+        ERROR_CODES.PORT_NOT_OPEN,
+        PORT_NOT_OPEN_MESSAGE,
+        { reason: 'Emulator controller is not configured' },
+      );
+    }
+    return emulatorController;
+  };
+
+  const openHardware = async () => {
+    const controller = ensureHardware();
+    if (!state.hardwareOpen && typeof controller.open === 'function') {
+      await controller.open();
+      state.hardwareOpen = true;
+    }
+  };
+
+  const openEmulator = async () => {
+    const controller = ensureEmulator();
+    if (!state.emulatorOpen && typeof controller.open === 'function') {
+      await controller.open();
+      state.emulatorOpen = true;
+    }
+  };
+
+  const closeHardware = async () => {
+    if (!hardwareController || !state.hardwareOpen) return;
+    if (typeof hardwareController.close === 'function') {
+      await hardwareController.close();
+    }
+    state.hardwareOpen = false;
+  };
+
+  const closeEmulator = async () => {
+    if (!emulatorController || !state.emulatorOpen) return;
+    if (typeof emulatorController.close === 'function') {
+      await emulatorController.close();
+    }
+    state.emulatorOpen = false;
+  };
+
+  const getActiveController = () =>
+    state.emulationEnabled ? ensureEmulator() : ensureHardware();
+
+  const switcher = {
+    isEmulationEnabled() {
+      return state.emulationEnabled;
+    },
+    async setEmulationEnabled(enabled) {
+      const next = Boolean(enabled);
+      if (next === state.emulationEnabled) {
+        return state.emulationEnabled;
+      }
+
+      if (next) {
+        await openEmulator();
+        await closeHardware();
+        state.emulationEnabled = true;
+        return true;
+      }
+
+      await openHardware();
+      await closeEmulator();
+      state.emulationEnabled = false;
+      return false;
+    },
+    async open() {
+      if (state.emulationEnabled) {
+        await openEmulator();
+        return;
+      }
+      await openHardware();
+    },
+    async close() {
+      await closeHardware();
+      await closeEmulator();
+    },
+  };
+
+  return new Proxy(switcher, {
+    get(target, prop) {
+      if (prop in target) {
+        const value = target[prop];
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+
+      const controller = getActiveController();
+      const value = controller[prop];
+      return typeof value === 'function' ? value.bind(controller) : value;
+    },
+  });
+}
+
 /* ========================================================================== */
 /*                     СОЗДАНИЕ HTTP-ПРИЛОЖЕНИЯ / СЕРВЕРА                     */
 /* ========================================================================== */
@@ -262,6 +409,46 @@ export function createVendingHttpApp({
   });
 
   const router = express.Router();
+
+  if (
+    typeof controller.setEmulationEnabled === 'function' &&
+    typeof controller.isEmulationEnabled === 'function'
+  ) {
+    router.get('/emulation/controller', (_req, res) => {
+      res.json({
+        success: true,
+        data: {
+          enabled: controller.isEmulationEnabled(),
+        },
+      });
+    });
+
+    router.post(
+      '/emulation/controller',
+      asyncRoute(async (req, res) => {
+        const { enabled } = req.body || {};
+        if (typeof enabled !== 'boolean') {
+          throw new VendingControllerError(
+            ERROR_CODES.INVALID_ARGUMENT,
+            INVALID_ARGUMENT_MESSAGE,
+            {
+              reason: '"enabled" must be a boolean',
+              enabled,
+            },
+          );
+        }
+
+        await controller.setEmulationEnabled(enabled);
+
+        res.json({
+          success: true,
+          data: {
+            enabled: controller.isEmulationEnabled(),
+          },
+        });
+      }),
+    );
+  }
 
   /* ======================================================================== */
   /*                              ВЫДАЧА ТОВАРА                               */
@@ -1194,15 +1381,34 @@ export async function startVendingHttpServer({
   httpPort = 3000,
   basePath = '/api/v1',
   logger = console.log,
+  emulator = false,
+  emulatorOptions = {},
 } = {}) {
-  if (!portPath) {
+  const emulationEnabled =
+    typeof emulator === 'string'
+      ? parseBooleanFlag(emulator, false)
+      : Boolean(emulator);
+
+  if (!emulationEnabled && !portPath) {
     throw new Error('startVendingHttpServer: "portPath" is required');
   }
 
-  const controller = new VendingController({
-    portPath,
-    baudRate,
+  const hardwareController = portPath
+    ? new VendingController({
+        portPath,
+        baudRate,
+        logger,
+      })
+    : null;
+  const emulatorController = new EmulatedVendingController({
     logger,
+    ...emulatorOptions,
+  });
+
+  const controller = createSwitchableController({
+    hardwareController,
+    emulatorController,
+    emulationEnabled,
   });
 
   await controller.open();
@@ -1221,6 +1427,10 @@ export async function startVendingHttpServer({
       basePath,
       portPath,
       baudRate,
+      emulationEnabled:
+        typeof controller.isEmulationEnabled === 'function'
+          ? controller.isEmulationEnabled()
+          : false,
     });
   });
 
@@ -1260,17 +1470,32 @@ export async function startVendingHttpServer({
  *     ],
  *   };
  */
-if (
+const entryFromArgv =
   process.argv[1] &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
-) {
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+const entryFromPm2 =
+  process.env.pm_exec_path &&
+  fileURLToPath(import.meta.url) === path.resolve(process.env.pm_exec_path);
+
+if (entryFromArgv || entryFromPm2) {
+  const { emulatorFlag, hardwareFlag, args } = parseCliArgs(
+    process.argv.slice(2),
+  );
+  const emulatorEnabled = emulatorFlag
+    ? true
+    : hardwareFlag
+      ? false
+      : parseBooleanFlag(process.env.VENDING_EMULATOR, false);
+
+  const portPathFromEnv = process.env.VENDING_PORT_PATH;
+  const portPathFromArgs = args[0];
   const portPath =
-    process.env.VENDING_PORT_PATH ||
-    process.argv[2] ||
-    '/dev/ttyS3';
+    portPathFromEnv ||
+    portPathFromArgs ||
+    (emulatorEnabled ? null : '/dev/ttyS3');
 
   const httpPort = Number(
-    process.env.VENDING_HTTP_PORT || process.argv[3] || 5000,
+    process.env.VENDING_HTTP_PORT || args[1] || 5000,
   );
 
   const baudRate = Number(
@@ -1297,6 +1522,7 @@ if (
     baudRate,
     basePath,
     logger,
+    emulator: emulatorEnabled,
   })
     .then(({ server, controller }) => {
       serverRef = server;

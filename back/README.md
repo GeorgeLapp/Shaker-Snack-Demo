@@ -20,6 +20,9 @@ Environment variables:
 - `VENDING_CONTROLLER_API_URL` - base URL of the hardware controller HTTP API (for example `http://127.0.0.1:3000/api/v1`). Defaults to that local URL.
 - `VENDING_CONTROLLER_REQUEST_TIMEOUT_MS` - optional timeout in milliseconds for HTTP calls to the controller API. Defaults to `10000`.
 - `VENDING_CONTROLLER_VEND_TIMEOUT_MS` - optional timeout in milliseconds passed as `timeoutMs` when invoking `/vend/simple` on the controller. The controller default is used when omitted.
+- `PAYMENT_DEVICE_EMULATOR` - toggles the payment emulator (defaults to `true`).
+- `PAYMENT_DEVICE_FAIL_CELL_NUMBERS` - comma-separated list of cell numbers that should fail in emulation mode (defaults to `1`).
+- `PAYMENT_DELAY_MS` - delay in milliseconds before resolving a payment in emulation mode (defaults to `5000`).
 
 ## Data source
 
@@ -40,6 +43,8 @@ Image files for the vending machine live in the `SnackMedia` directory. They are
 - `GET /api/product-matrix` - returns the full product matrix.
 - `POST /api/start-sale` - accepts `{ "cellNumber": number }` and returns `{ "success": true }`.
 - `POST /api/issue-product` - accepts `{ "cellNumber": number }`, triggers a `/vend/simple` request against the controller API, and mirrors its success response.
+- `GET /api/emulation/payment` - returns `{ "enabled": boolean }`.
+- `POST /api/emulation/payment` - accepts `{ "enabled": boolean }` and updates the payment emulator flag.
 
 Each handler logs the call metadata alongside the incoming payload for observability.
 

@@ -13,7 +13,7 @@ const TELEMETRY_API_BASE_URL =
   (process.env.TELEMETRY_API_BASE_URL || "http://localhost:3002").replace(/\/+$/, "");
 
 const CONTROLLER_API_BASE_URL =
-  (process.env.VENDING_CONTROLLER_API_URL || "http://127.0.0.1:3001/api/v1").replace(/\/+$/, "");
+  (process.env.VENDING_CONTROLLER_API_URL || "http://127.0.0.1:5000/api/v1").replace(/\/+$/, "");
 const CONTROLLER_REQUEST_TIMEOUT_MS = Number(
   process.env.VENDING_CONTROLLER_REQUEST_TIMEOUT_MS || 10000,
 );

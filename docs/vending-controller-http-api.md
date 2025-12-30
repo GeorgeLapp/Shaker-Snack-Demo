@@ -25,20 +25,20 @@
 По умолчанию:
 
 * **Базовый URL (base path)**: `/api/v1`
-* **Порт HTTP**: `3000`
+* **Порт HTTP**: `5000`
 * **UART**: `/dev/ttyUSB0` (можно переопределить)
 * **Скорость UART**: `9600`
 
 Если запускаем **напрямую**:
 
 ```bash
-node vending-http-api.mjs /dev/ttyUSB0 3000
+node vending-http-api.mjs /dev/ttyUSB0 5000
 ```
 
 Или через **переменные окружения** (рекомендуется для pm2):
 
 * `VENDING_PORT_PATH` — UART-порт (например, `/dev/ttyUSB0`, `COM3`) — **обязательно**
-* `VENDING_HTTP_PORT` — HTTP-порт (по умолчанию `3000`)
+* `VENDING_HTTP_PORT` — HTTP-порт (по умолчанию `5000`)
 * `VENDING_BAUD_RATE` — скорость порта (по умолчанию `9600`)
 * `VENDING_BASE_PATH` — базовый путь API (по умолчанию `/api/v1`)
 * `VENDING_EMULATOR` — включить эмуляцию контроллера (`true`/`false`, по умолчанию `false`)
@@ -68,7 +68,7 @@ module.exports = {
       interpreter: 'node',
       env: {
         VENDING_PORT_PATH: '/dev/ttyUSB0',
-        VENDING_HTTP_PORT: 3000,
+        VENDING_HTTP_PORT: 5000,
         VENDING_BAUD_RATE: 9600,
         VENDING_BASE_PATH: '/api/v1',
         NODE_ENV: 'production',
@@ -139,7 +139,7 @@ module.exports = {
 
 Во всех примерах я буду использовать:
 
-* адрес сервиса: `http://localhost:3000`
+* адрес сервиса: `http://localhost:5000`
 * базовый путь: `/api/v1`
 
 ---
@@ -534,7 +534,7 @@ POST /api/v1/channels/5/type/belt
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/channels/5/type/belt \
+curl -X POST http://localhost:5000/api/v1/channels/5/type/belt \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -555,7 +555,7 @@ POST /api/v1/channels/5/type/spring
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/channels/5/type/spring \
+curl -X POST http://localhost:5000/api/v1/channels/5/type/spring \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -568,7 +568,7 @@ curl -X POST http://localhost:3000/api/v1/channels/5/type/spring \
 Все каналы сделать **пружинными**.
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/channels/type/all/spring \
+curl -X POST http://localhost:5000/api/v1/channels/type/all/spring \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -593,7 +593,7 @@ curl -X POST http://localhost:3000/api/v1/channels/type/all/spring \
 Все каналы сделать **ленточными**.
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/channels/type/all/belt \
+curl -X POST http://localhost:5000/api/v1/channels/type/all/belt \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -620,7 +620,7 @@ POST /api/v1/channels/5/mode/single
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/channels/5/mode/single \
+curl -X POST http://localhost:5000/api/v1/channels/5/mode/single \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -689,7 +689,7 @@ GET /api/v1/temperature?timeoutMs=300
 **Пример curl:**
 
 ```bash
-curl "http://localhost:3000/api/v1/temperature?timeoutMs=300"
+curl "http://localhost:5000/api/v1/temperature?timeoutMs=300"
 ```
 
 ---
@@ -723,7 +723,7 @@ curl "http://localhost:3000/api/v1/temperature?timeoutMs=300"
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/temp/control \
+curl -X POST http://localhost:5000/api/v1/temp/control \
   -H "Content-Type: application/json" \
   -d '{"enabled": true, "timeoutMs": 300}'
 ```
@@ -749,7 +749,7 @@ curl -X POST http://localhost:3000/api/v1/temp/control \
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/temp/mode \
+curl -X POST http://localhost:5000/api/v1/temp/mode \
   -H "Content-Type: application/json" \
   -d '{"mode": "cool", "timeoutMs": 300}'
 ```
@@ -773,7 +773,7 @@ curl -X POST http://localhost:3000/api/v1/temp/mode \
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/temp/setpoint \
+curl -X POST http://localhost:5000/api/v1/temp/setpoint \
   -H "Content-Type: application/json" \
   -d '{"celsius": 4, "timeoutMs": 300}'
 ```
@@ -793,7 +793,7 @@ curl -X POST http://localhost:3000/api/v1/temp/setpoint \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/temp/hysteresis \
+curl -X POST http://localhost:5000/api/v1/temp/hysteresis \
   -H "Content-Type: application/json" \
   -d '{"deltaC": 2, "timeoutMs": 300}'
 ```
@@ -813,7 +813,7 @@ curl -X POST http://localhost:3000/api/v1/temp/hysteresis \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/temp/compensation \
+curl -X POST http://localhost:5000/api/v1/temp/compensation \
   -H "Content-Type: application/json" \
   -d '{"celsius": 1, "timeoutMs": 300}'
 ```
@@ -833,7 +833,7 @@ curl -X POST http://localhost:3000/api/v1/temp/compensation \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/temp/defrost \
+curl -X POST http://localhost:5000/api/v1/temp/defrost \
   -H "Content-Type: application/json" \
   -d '{"minutes": 10, "timeoutMs": 300}'
 ```
@@ -853,7 +853,7 @@ curl -X POST http://localhost:3000/api/v1/temp/defrost \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/temp/compressor-run \
+curl -X POST http://localhost:5000/api/v1/temp/compressor-run \
   -H "Content-Type: application/json" \
   -d '{"minutes": 20, "timeoutMs": 300}'
 ```
@@ -873,7 +873,7 @@ curl -X POST http://localhost:3000/api/v1/temp/compressor-run \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/temp/fan-idle-off \
+curl -X POST http://localhost:5000/api/v1/temp/fan-idle-off \
   -H "Content-Type: application/json" \
   -d '{"minutes": 5, "timeoutMs": 300}'
 ```
@@ -893,7 +893,7 @@ curl -X POST http://localhost:3000/api/v1/temp/fan-idle-off \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/glass-heater \
+curl -X POST http://localhost:5000/api/v1/glass-heater \
   -H "Content-Type: application/json" \
   -d '{"on": true, "timeoutMs": 300}'
 ```
@@ -928,7 +928,7 @@ GET /api/v1/door?timeoutMs=300
 **Пример curl:**
 
 ```bash
-curl "http://localhost:3000/api/v1/door?timeoutMs=300"
+curl "http://localhost:5000/api/v1/door?timeoutMs=300"
 ```
 
 ---
@@ -947,7 +947,7 @@ curl "http://localhost:3000/api/v1/door?timeoutMs=300"
 **Пример curl:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/door/open \
+curl -X POST http://localhost:5000/api/v1/door/open \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -960,7 +960,7 @@ curl -X POST http://localhost:3000/api/v1/door/open \
 Команда «разблокировать дверь выдачи».
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/door/unlock \
+curl -X POST http://localhost:5000/api/v1/door/unlock \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```
@@ -990,7 +990,7 @@ curl -X POST http://localhost:5000/api/v1/lighting \
 **Пример выключения:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/lighting \
+curl -X POST http://localhost:5000/api/v1/lighting \
   -H "Content-Type: application/json" \
   -d '{"on": false}'
 ```
@@ -1012,7 +1012,7 @@ curl -X POST http://localhost:3000/api/v1/lighting \
 **Пример:**
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/buzzer \
+curl -X POST http://localhost:5000/api/v1/buzzer \
   -H "Content-Type: application/json" \
   -d '{"on": true, "timeoutMs": 300}'
 ```
@@ -1031,7 +1031,7 @@ curl -X POST http://localhost:3000/api/v1/buzzer \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/accelerometer/enable \
+curl -X POST http://localhost:5000/api/v1/accelerometer/enable \
   -H "Content-Type: application/json" \
   -d '{"timeoutMs": 300}'
 ```

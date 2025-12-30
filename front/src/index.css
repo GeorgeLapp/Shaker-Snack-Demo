@@ -24,3 +24,9 @@ code {
   margin: 0;
   padding: 0;
 }
+
+html.zoom-locked,
+html.zoom-locked body,
+html.zoom-locked #root {
+  touch-action: pan-x pan-y;
+}

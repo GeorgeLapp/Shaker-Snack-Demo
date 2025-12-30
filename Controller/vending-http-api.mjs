@@ -136,7 +136,7 @@
  *
  * Переменные окружения:
  *   VENDING_PORT_PATH  — путь к UART (COM3, /dev/ttyUSB0 и т.п.) [обязателен]
- *   VENDING_HTTP_PORT  — HTTP-порт, по умолчанию 3000
+ *   VENDING_HTTP_PORT  — HTTP-порт, по умолчанию 5000
  *   VENDING_BAUD_RATE  — скорость порта, по умолчанию 9600
  *   VENDING_BASE_PATH  — базовый путь API, по умолчанию /api/v1
  *
@@ -1370,7 +1370,7 @@ export function createVendingHttpApp({
  * @param {object} options
  * @param {string} options.portPath - путь к UART-порту
  * @param {number} [options.baudRate=9600]
- * @param {number} [options.httpPort=3000]
+ * @param {number} [options.httpPort=5000]
  * @param {string} [options.basePath='/api/v1']
  * @param {(logObj:any) => void} [options.logger]
  * @returns {Promise<{ app: import('express').Express, server: import('http').Server, controller: VendingController }>}
@@ -1378,7 +1378,7 @@ export function createVendingHttpApp({
 export async function startVendingHttpServer({
   portPath,
   baudRate = 9600,
-  httpPort = 3000,
+  httpPort = 5000,
   basePath = '/api/v1',
   logger = console.log,
   emulator = false,
@@ -1447,7 +1447,7 @@ export async function startVendingHttpServer({
  *
  * Можно настроить через env-переменные (идеально для pm2):
  *   VENDING_PORT_PATH=/dev/ttyUSB0
- *   VENDING_HTTP_PORT=3000
+ *   VENDING_HTTP_PORT=5000
  *   VENDING_BAUD_RATE=9600
  *   VENDING_BASE_PATH=/api/v1
  *
@@ -1461,7 +1461,7 @@ export async function startVendingHttpServer({
  *         interpreter: 'node',
  *         env: {
  *           VENDING_PORT_PATH: '/dev/ttyUSB0',
- *           VENDING_HTTP_PORT: 3000,
+ *           VENDING_HTTP_PORT: 5000,
  *           VENDING_BAUD_RATE: 9600,
  *           VENDING_BASE_PATH: '/api/v1',
  *           NODE_ENV: 'production',

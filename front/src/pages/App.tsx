@@ -6,6 +6,7 @@ import { Route, Routes } from 'react-router-dom';
 import { useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import ClientPage from './Client';
+import useZoomLock from '../hooks/useZoomLock';
 
 /**
  * Названия тем
@@ -51,6 +52,9 @@ const App: React.FC = () => {
     ? ThemeName.gpnDark
     : ThemeName.gpnDefault;
   const location = useLocation();
+  const shouldLockZoom = location.pathname === '/' || location.pathname.startsWith('/menu');
+
+  useZoomLock(shouldLockZoom);
 
   // const [theme, setTheme] = useState<ThemeName>(browserTheme);
   // const [language, setLanguage] = useState<LanguageName>(browserLanguage);

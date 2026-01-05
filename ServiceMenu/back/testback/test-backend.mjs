@@ -1118,7 +1118,7 @@ function buildMotorDtoFromCell(cell) {
 }
 
 // Logical representation for test-cells screen:
-// always MACHINE_CELLS_COUNT items, master cells with attached slave motors.
+// master/standalone cells only, with slave motors attached to their master.
 function buildDiagnosticCellsView() {
   const cellsWithProduct = (STATE.cells || []).map(buildCellDtoWithProduct);
   const byId = new Map(cellsWithProduct.map((c) => [c.id, c]));
@@ -1139,6 +1139,9 @@ function buildDiagnosticCellsView() {
 
   for (let logicalId = 1; logicalId <= total; logicalId++) {
     const master = byId.get(logicalId);
+    if (master?.mergedTo != null) {
+      continue;
+    }
     const motors = [];
 
     if (master) {

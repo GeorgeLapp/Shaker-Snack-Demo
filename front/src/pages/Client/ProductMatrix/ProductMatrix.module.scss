@@ -8,8 +8,11 @@ $badgeHeight: 22px;
   padding: var(--space-m);
 
   .productRow {
+    width: 100%;
+
     .productCell {
-      flex: 1;
+      flex: 1 1 0;
+      min-width: 0;
 
       border: 1px solid var(--bg-border-primary);
       border-radius: var(--control-radius-m);

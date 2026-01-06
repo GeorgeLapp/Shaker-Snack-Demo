@@ -289,6 +289,15 @@ class TelemetryDb {
     await this.ensureReady();
     await this.runAsync('BEGIN TRANSACTION');
     try {
+      const itemsArray = Array.isArray(items) ? items : [];
+      const incomingProductIds = new Set();
+      for (const item of itemsArray) {
+        const rawId = item?.id;
+        const productId = Number(rawId);
+        if (Number.isFinite(productId)) {
+          incomingProductIds.add(productId);
+        }
+      }
       // 1. Загружаем уже существующие бренды и строим карту name -> id
       const existingBrands = await this.allAsync(
         'SELECT id, name FROM catalog_brand'
@@ -303,14 +312,18 @@ class TelemetryDb {
       }
 
       // 2. Проходим по всем товарам и гарантируем наличие брендов
-      for (const item of items) {
+      for (const item of itemsArray) {
         const brand = item.goodBrand || null;
         if (!brand || !brand.name) {
           // бренд не указан — пропускаем, product будет с brand_id = NULL
           continue;
         }
 
-        const brandName = brand.name;
+        const brandName =
+          typeof brand.name === 'string' ? brand.name.trim() : brand.name;
+        if (!brandName) {
+          continue;
+        }
         // если бренд уже есть в карте — ничего не делаем
         if (brandIdByName.has(brandName)) {
           continue;
@@ -344,19 +357,60 @@ class TelemetryDb {
 
         // вычитываем фактический id бренда по имени
         const row = await this.getAsync(
-          'SELECT id FROM catalog_brand WHERE name = $name',
+          'SELECT id, name FROM catalog_brand WHERE name = $name',
           { $name: brandName }
         );
         if (!row || row.id == null) {
-          throw new Error(`Failed to resolve brand id for name "${brandName}"`);
+          if (telemetryBrandId != null) {
+            const rowById = await this.getAsync(
+              'SELECT id, name FROM catalog_brand WHERE id = $id',
+              { $id: telemetryBrandId }
+            );
+            if (rowById && rowById.id != null) {
+              if (rowById.name !== brandName) {
+                try {
+                  await this.runAsync(
+                    'UPDATE catalog_brand SET name = $name WHERE id = $id',
+                    { $id: rowById.id, $name: brandName }
+                  );
+                } catch (err) {
+                  console.warn(
+                    `Failed to update brand name for id ${rowById.id}: ${err.message}`,
+                  );
+                }
+              }
+              brandIdByName.set(brandName, rowById.id);
+              continue;
+            }
+          }
+
+          await this.runAsync(
+            `
+            INSERT OR IGNORE INTO catalog_brand (name)
+            VALUES ($name)
+            `,
+            { $name: brandName }
+          );
+          const rowByName = await this.getAsync(
+            'SELECT id FROM catalog_brand WHERE name = $name',
+            { $name: brandName }
+          );
+          if (!rowByName || rowByName.id == null) {
+            console.warn(`Failed to resolve brand id for name "${brandName}"`);
+            continue;
+          }
+          brandIdByName.set(brandName, rowByName.id);
+          continue;
         }
         brandIdByName.set(brandName, row.id);
       }
 
       // 3. Upsert продуктов, опираясь на brandIdByName
-      for (const item of items) {
+      for (const item of itemsArray) {
         const brand = item.goodBrand || null;
-        const brandName = brand?.name || null;
+        const rawBrandName = brand?.name ?? null;
+        const brandName =
+          typeof rawBrandName === 'string' ? rawBrandName.trim() : rawBrandName;
         const brandId = brandName ? (brandIdByName.get(brandName) ?? null) : null;
 
         const priceMinor = typeof item.price === 'number'
@@ -432,6 +486,33 @@ class TelemetryDb {
       }
 
       // 4. Обновляем состояние синхронизации каталога
+      const incomingIds = Array.from(incomingProductIds).filter((id) => id !== 0);
+      if (incomingIds.length === 0) {
+        await this.runAsync('DELETE FROM catalog_product WHERE id <> 0');
+      } else {
+        const params = {};
+        const placeholders = incomingIds
+          .map((id, index) => {
+            const key = `$id${index}`;
+            params[key] = id;
+            return key;
+          })
+          .join(', ');
+        await this.runAsync(
+          `DELETE FROM catalog_product WHERE id <> 0 AND id NOT IN (${placeholders})`,
+          params
+        );
+      }
+
+      await this.runAsync(
+        `
+        DELETE FROM catalog_brand
+         WHERE id NOT IN (
+           SELECT DISTINCT brand_id FROM catalog_product WHERE brand_id IS NOT NULL
+         )
+        `
+      );
+
       await this.runAsync(
         `
         INSERT INTO catalog_sync_state (id, last_sync_ts, source_hash)
@@ -753,6 +834,8 @@ export class TelemetryCore {
     this.imageDir = imageDir;
     // Кэш соответствий productId -> абсолютный путь к файлу
     this.imagePathByProductId = null;
+    this.imageDownloadPromise = null;
+    this.pendingImageDownload = null;
     this.lastMatrixSyncConnectionId = null;
     this.lastCatalogSyncConnectionId = null;
 
@@ -926,9 +1009,7 @@ export class TelemetryCore {
 
     const imageDir = imageDirOverride ?? this.imageDir;
     if (imageDir) {
-      await this.downloadProductImages(items, imageDir);
-      // После обновления файлов — сбрасываем кэш путей, чтобы пересканировать при следующем запросе
-      this.imagePathByProductId = null;
+      this.scheduleCatalogImageDownload(items, imageDir);
     }
 
     return {
@@ -940,6 +1021,34 @@ export class TelemetryCore {
     };
   }
 
+  scheduleCatalogImageDownload(items, imageDir) {
+    if (!imageDir) {
+      return;
+    }
+
+    this.pendingImageDownload = { items, imageDir };
+
+    if (this.imageDownloadPromise) {
+      return;
+    }
+
+    const run = async () => {
+      while (this.pendingImageDownload) {
+        const current = this.pendingImageDownload;
+        this.pendingImageDownload = null;
+        await this.downloadProductImages(current.items, current.imageDir);
+        this.imagePathByProductId = null;
+      }
+    };
+
+    this.imageDownloadPromise = run()
+      .catch((err) => {
+        console.error('Failed to download product images:', err?.message || err);
+      })
+      .finally(() => {
+        this.imageDownloadPromise = null;
+      });
+  }
   /**
    * Скачивание картинок каталога в указанную директорию.
    * Имя файла: "<id>.<ext>", где ext определяется по Content-Type либо расширению URL.
@@ -947,17 +1056,46 @@ export class TelemetryCore {
   async downloadProductImages(items, imageDir) {
     await fs.mkdir(imageDir, { recursive: true });
 
-    for (const item of items) {
-      const url = item.imgPath;
-      const id = item.id;
+    const itemsArray = Array.isArray(items) ? items : [];
+    const downloadById = new Map();
 
-      if (!url || !id) continue;
+    for (const item of itemsArray) {
+      const productId = Number(item?.id);
+      if (!Number.isFinite(productId) || productId <= 0) {
+        continue;
+      }
 
+      const url = typeof item.imgPath === 'string' ? item.imgPath.trim() : '';
+      if (url) {
+        downloadById.set(productId, url);
+      }
+    }
+
+    try {
+      const entries = await fs.readdir(imageDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const filePath = path.join(imageDir, entry.name);
+        try {
+          await fs.unlink(filePath);
+        } catch (err) {
+          if (err?.code !== 'ENOENT') {
+            console.warn(
+              `Failed to remove image file ${entry.name}: ${err.message}`
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to clear product images directory:', err.message || err);
+    }
+
+    for (const [productId, url] of downloadById.entries()) {
       try {
         const response = await fetch(url);
         if (!response.ok) {
           console.error(
-            `Failed to download image for product ${id}: HTTP ${response.status}`
+            `Failed to download image for product ${productId}: HTTP ${response.status}`
           );
           continue;
         }
@@ -973,7 +1111,6 @@ export class TelemetryCore {
               ext = extName;
             }
           } catch {
-            // игнорируем ошибки парсинга URL
           }
         }
 
@@ -984,12 +1121,12 @@ export class TelemetryCore {
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        const fileName = `${id}.${ext}`;
+        const fileName = `${productId}.${ext}`;
         const filePath = path.join(imageDir, fileName);
         await fs.writeFile(filePath, buffer);
       } catch (err) {
         console.error(
-          `Error while downloading image for product ${id}: ${err.message}`
+          `Error while downloading image for product ${productId}: ${err.message}`
         );
       }
     }

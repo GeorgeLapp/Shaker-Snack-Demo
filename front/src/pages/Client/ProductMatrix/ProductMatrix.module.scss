@@ -47,6 +47,15 @@ $badgeHeight: 22px;
           color: var(--control-primary-typo-typo);
         }
       }
+
+      &.productCellDisabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+
+        .img {
+          filter: grayscale(0.7);
+        }
+      }
     }
   }
 

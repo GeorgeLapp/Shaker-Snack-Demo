@@ -20,7 +20,7 @@ const parseNumberList = (value) => {
 };
 
 const DEFAULT_FAIL_CELLS = parseNumberList(
-  process.env.PAYMENT_DEVICE_FAIL_CELL_NUMBERS || '1',
+  process.env.PAYMENT_DEVICE_FAIL_CELL_NUMBERS || '',
 );
 
 let emulationEnabled = parseBoolean(process.env.PAYMENT_DEVICE_EMULATOR, true);

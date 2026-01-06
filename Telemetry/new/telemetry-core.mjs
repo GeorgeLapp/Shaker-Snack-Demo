@@ -753,6 +753,7 @@ export class TelemetryCore {
     this.imageDir = imageDir;
     // Кэш соответствий productId -> абсолютный путь к файлу
     this.imagePathByProductId = null;
+    this.lastMatrixSyncConnectionId = null;
 
     this.postBootstrapPromise = this.db
       .ensureReady()
@@ -766,10 +767,17 @@ export class TelemetryCore {
         console.error('Error handling telemetry push:', err);
       });
     });
+    this.transport.onConnect((info) => {
+      this.handleTransportConnected(info).catch((err) => {
+        console.error(
+          'Failed to sync matrix after telemetry connect:',
+          err?.message || err,
+        );
+      });
+    });
   }
 
   async handlePostBootstrap() {
-    const needMatrixPush = this.db.matrixSeeded;
     const hasCatalog = await this.db.hasCatalogProducts();
 
     if (!hasCatalog) {
@@ -780,18 +788,32 @@ export class TelemetryCore {
       }
     }
 
-    if (needMatrixPush) {
-      try {
-        await this.syncMatrix();
-      } catch (err) {
-        console.error('Failed to push baseline matrix to telemetry:', err.message || err);
-      }
-    }
   }
 
   async ensurePostBootstrap() {
     if (this.postBootstrapPromise) {
       await this.postBootstrapPromise;
+    }
+  }
+
+  async handleTransportConnected({ connectionId } = {}) {
+    if (
+      Number.isInteger(connectionId) &&
+      this.lastMatrixSyncConnectionId === connectionId
+    ) {
+      return;
+    }
+
+    await this.db.ensureReady();
+
+    if (Number.isInteger(connectionId)) {
+      this.lastMatrixSyncConnectionId = connectionId;
+    }
+
+    try {
+      await this.syncMatrix();
+    } catch (err) {
+      console.error('Failed to push matrix on telemetry connect:', err.message || err);
     }
   }
 

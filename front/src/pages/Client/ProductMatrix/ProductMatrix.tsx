@@ -13,6 +13,8 @@ import { IconArrowLeft } from '../../../assets/icon/iconArrowLeft';
 import { Button } from '@consta/uikit/Button';
 import { getOpenSettingsAction } from '../../../state/serviceMenu/action';
 import AuthorizationModal from '../../Service/ServiceMenu/AuthorizationModal';
+import { ICON_EMPTY_DATA_URL } from '../../../assets/icon/iconEmpty';
+import { ProductMatrixItem } from '../../../types/serverInterface/ProductMatrixDTO';
 
 /**
  * Матрица продуктов в меню покупки
@@ -78,16 +80,33 @@ const ProductMatrix: FC = () => {
     </VerticalContainer>
   );
 
-  const renderProductCell = ({ id, imgPath, cellNumber, price }: any) => (
+  const isMissingProduct = (productId?: number | null) =>
+    productId === null || productId === undefined || productId === 0;
+
+  const resolveProductImgPath = (productId: number | null | undefined, imgPath?: string) =>
+    isMissingProduct(productId) ? ICON_EMPTY_DATA_URL : imgPath || ICON_EMPTY_DATA_URL;
+
+  const renderProductCell = ({
+    id,
+    productId,
+    imgPath,
+    cellNumber,
+    price,
+  }: ProductMatrixItem) => (
     <VerticalContainer
-      key={id}
-      className={styles.productCell}
+      key={cellNumber}
+      className={classNames(styles.productCell, isMissingProduct(productId) && styles.productCellDisabled)}
       space="2xs"
       align="center"
-      onClick={handleProductClick(id)}
+      aria-disabled={isMissingProduct(productId)}
+      onClick={isMissingProduct(productId) ? undefined : handleProductClick(id)}
     >
       <HorizontalContainer className={styles.imgWrapper} justify="center">
-        <img className={styles.img} src={imgPath} alt={`Продукт №${cellNumber}`} />
+        <img
+          className={styles.img}
+          src={resolveProductImgPath(productId, imgPath)}
+          alt={`Продукт №${cellNumber}`}
+        />
       </HorizontalContainer>
 
       <VerticalContainer space={0} isAutoWidth>
@@ -107,7 +126,7 @@ const ProductMatrix: FC = () => {
     </VerticalContainer>
   );
 
-  const renderProductRow = (rowCells: any[]) => (
+  const renderProductRow = (rowCells: ProductMatrixItem[]) => (
     <HorizontalContainer className={styles.productRow} space="xs">
       {rowCells.map(renderProductCell)}
     </HorizontalContainer>

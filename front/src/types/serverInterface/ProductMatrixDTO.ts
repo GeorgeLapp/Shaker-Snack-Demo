@@ -7,6 +7,10 @@ export type ProductMatrixItem = {
    */
   id: number;
   /**
+   * Product id assigned to the cell (null/0 when empty).
+   */
+  productId?: number | null;
+  /**
    * Номер ячейки
    */
   cellNumber: number;

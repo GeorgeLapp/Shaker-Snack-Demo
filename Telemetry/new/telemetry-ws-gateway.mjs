@@ -97,6 +97,8 @@ export class TelemetryWsGateway {
 
     /** @type {((msg:any) => void)[]} обработчики push-сообщений */
     this.pushHandlers = [];
+    this.connectHandlers = [];
+    this.connectionId = 0;
   }
 
   // ============================
@@ -109,6 +111,24 @@ export class TelemetryWsGateway {
    */
   onPush(handler) {
     this.pushHandlers.push(handler);
+  }
+
+  /**
+   * Registers handlers invoked after each successful WebSocket connection.
+   * @param {(info:{connectionId:number,isReconnect:boolean}) => void} handler
+   */
+  onConnect(handler) {
+    this.connectHandlers.push(handler);
+  }
+
+  dispatchConnect(info) {
+    for (const handler of this.connectHandlers) {
+      try {
+        handler(info);
+      } catch (err) {
+        console.error('Connect handler error:', err);
+      }
+    }
   }
 
   /**
@@ -215,6 +235,11 @@ export class TelemetryWsGateway {
         console.log('Telemetry WebSocket connected');
         this.ws = ws;
         this.setupWsHandlers();
+        this.connectionId += 1;
+        this.dispatchConnect({
+          connectionId: this.connectionId,
+          isReconnect: this.connectionId > 1,
+        });
         resolve();
       });
 

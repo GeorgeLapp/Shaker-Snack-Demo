@@ -191,7 +191,8 @@ const normalizeMatrixPayload = (matrixRows, catalogRows) => {
         product?.imgUrl;
 
       return {
-        id: productId ?? cellNumber ?? 0,
+        id: cellNumber ?? 0,
+        productId: productId ?? null,
         cellNumber: cellNumber ?? 0,
         rowNumber: calcRowNumber(row?.row_number ?? row?.rowNumber, cellNumber),
         price,
@@ -285,7 +286,7 @@ const startSale = async (payload) => {
     await processPayment({
       cellNumber: Number(product.cellNumber),
       price: product.price,
-      productId: product.id ?? null,
+      productId: product.productId ?? null,
     });
   } catch (error) {
     const statusCode =
@@ -296,7 +297,7 @@ const startSale = async (payload) => {
 
     logEvent('client.startSale.failed', {
       cellNumber: product.cellNumber,
-      productId: product.id ?? null,
+      productId: product.productId ?? null,
       message,
       code: error?.code ?? null,
     });
@@ -309,7 +310,7 @@ const startSale = async (payload) => {
 
   logEvent('client.startSale.accepted', {
     cellNumber: product.cellNumber,
-    productId: product.id ?? null,
+    productId: product.productId ?? null,
   });
 
   return { success: true };
@@ -332,7 +333,7 @@ const issueProduct = async (payload) => {
 
     logEvent('client.issueProduct.accepted', {
       cellNumber: product.cellNumber,
-      productId: product.id ?? null,
+      productId: product.productId ?? null,
       controllerChannel: controllerResponse?.channel ?? null,
       controllerRawHex: controllerResponse?.rawHex ?? null,
     });
@@ -341,7 +342,7 @@ const issueProduct = async (payload) => {
   } catch (error) {
     logEvent('client.issueProduct.failed', {
       cellNumber: product.cellNumber,
-      productId: product.id ?? null,
+      productId: product.productId ?? null,
       message: error.message,
       code: error.code,
     });

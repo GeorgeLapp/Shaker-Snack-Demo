@@ -1448,7 +1448,15 @@ app.post(`${API_PREFIX}/maintenance/calibration/start`, requireAuth, async (req,
 });
 
 
-function buildTelemetryVolumePayloadFromStateCell(cell) {
+  let telemetryNeedsFullSync = true;
+
+  function buildTelemetryCellsPayloadFromStateCells(cells) {
+    return (cells || [])
+      .map(buildTelemetryCellPayloadFromStateCell)
+      .filter(Boolean);
+  }
+
+  function buildTelemetryVolumePayloadFromStateCell(cell) {
   if (!cell) return null;
 
   return {
@@ -1457,36 +1465,82 @@ function buildTelemetryVolumePayloadFromStateCell(cell) {
   };
 }
 
-async function syncTelemetryCellsFromStateCells(cells) {
-  const payload = (cells || [])
-    .map(buildTelemetryCellPayloadFromStateCell)
-    .filter(Boolean);
-
-  if (!payload.length) return;
-
-  try {
-    await postTelemetryCells(payload);
-  } catch (err) {
-    console.error("Failed to sync Telemetry cells:", err.message || err);
+  function buildTelemetryVolumesPayloadFromStateCells(cells) {
+    return (cells || [])
+      .map(buildTelemetryVolumePayloadFromStateCell)
+      .filter(Boolean);
   }
-}
-
-async function syncTelemetryVolumesFromStateCells(cells) {
-  const payload = (cells || [])
-    .map(buildTelemetryVolumePayloadFromStateCell)
-    .filter(Boolean);
-
-  if (!payload.length) return;
-
-  try {
-    await postTelemetryVolumes(payload);
-  } catch (err) {
-    console.error("Failed to sync Telemetry volumes:", err.message || err);
+  
+  async function sendTelemetryCellsPayload(payload) {
+    if (!payload.length) return true;
+  
+    try {
+      await postTelemetryCells(payload);
+      return true;
+    } catch (err) {
+      console.error("Failed to sync Telemetry cells:", err.message || err);
+      return false;
+    }
   }
-}
-
-// Test backend port configuration
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`Test backend (Unified v3.0) running at http://localhost:${PORT}${API_PREFIX}`);
-});
+  
+  async function sendTelemetryVolumesPayload(payload) {
+    if (!payload.length) return true;
+  
+    try {
+      await postTelemetryVolumes(payload);
+      return true;
+    } catch (err) {
+      console.error("Failed to sync Telemetry volumes:", err.message || err);
+      return false;
+    }
+  }
+  
+  async function syncTelemetryFullMatrixIfNeeded() {
+    if (!telemetryNeedsFullSync) return true;
+  
+    const cells = Array.isArray(STATE.cells) ? STATE.cells : [];
+    const cellsPayload = buildTelemetryCellsPayloadFromStateCells(cells);
+    const volumesPayload = buildTelemetryVolumesPayloadFromStateCells(cells);
+    const [cellsOk, volumesOk] = await Promise.all([
+      sendTelemetryCellsPayload(cellsPayload),
+      sendTelemetryVolumesPayload(volumesPayload),
+    ]);
+  
+    const ok = cellsOk && volumesOk;
+    if (ok) {
+      telemetryNeedsFullSync = false;
+    }
+  
+    return ok;
+  }
+  
+  async function syncTelemetryCellsFromStateCells(cells) {
+    await syncTelemetryFullMatrixIfNeeded();
+    const payload = buildTelemetryCellsPayloadFromStateCells(cells);
+    const ok = await sendTelemetryCellsPayload(payload);
+    if (!ok) {
+      telemetryNeedsFullSync = true;
+    }
+    return ok;
+  }
+  
+  async function syncTelemetryVolumesFromStateCells(cells) {
+    await syncTelemetryFullMatrixIfNeeded();
+    const payload = buildTelemetryVolumesPayloadFromStateCells(cells);
+    const ok = await sendTelemetryVolumesPayload(payload);
+    if (!ok) {
+      telemetryNeedsFullSync = true;
+    }
+    return ok;
+  }
+  
+  // Test backend port configuration
+  const PORT = process.env.PORT || 8080;
+  app.listen(PORT, () => {
+    console.log(`Test backend (Unified v3.0) running at http://localhost:${PORT}${API_PREFIX}`);
+    syncTelemetryFullMatrixIfNeeded().then((ok) => {
+      if (!ok) {
+        console.warn("Telemetry full matrix sync deferred until connection is available.");
+      }
+    });
+  });

@@ -145,7 +145,9 @@ const normalizeMatrixPayload = (matrixRows, catalogRows) => {
     const productId =
       toNumberOrNull(product?.id) ??
       toNumberOrNull(product?.good_id) ??
-      toNumberOrNull(product?.goodId);
+      toNumberOrNull(product?.goodId) ??
+      toNumberOrNull(product?.product_id) ??
+      toNumberOrNull(product?.productId);
 
     if (productId !== null) {
       catalogMap.set(productId, product);
@@ -164,7 +166,8 @@ const normalizeMatrixPayload = (matrixRows, catalogRows) => {
       const productId =
         toNumberOrNull(row?.good_id) ??
         toNumberOrNull(row?.goodId) ??
-        toNumberOrNull(row?.id);
+        toNumberOrNull(row?.product_id) ??
+        toNumberOrNull(row?.productId);
       const product = productId !== null ? catalogMap.get(productId) : null;
 
       const priceMinor =

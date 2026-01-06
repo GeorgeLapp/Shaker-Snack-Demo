@@ -754,6 +754,7 @@ export class TelemetryCore {
     // Кэш соответствий productId -> абсолютный путь к файлу
     this.imagePathByProductId = null;
     this.lastMatrixSyncConnectionId = null;
+    this.lastCatalogSyncConnectionId = null;
 
     this.postBootstrapPromise = this.db
       .ensureReady()
@@ -770,7 +771,7 @@ export class TelemetryCore {
     this.transport.onConnect((info) => {
       this.handleTransportConnected(info).catch((err) => {
         console.error(
-          'Failed to sync matrix after telemetry connect:',
+          'Failed to sync telemetry after connect:',
           err?.message || err,
         );
       });
@@ -797,23 +798,44 @@ export class TelemetryCore {
   }
 
   async handleTransportConnected({ connectionId } = {}) {
-    if (
-      Number.isInteger(connectionId) &&
-      this.lastMatrixSyncConnectionId === connectionId
-    ) {
+    const hasConnectionId = Number.isInteger(connectionId);
+    const shouldSyncCatalog =
+      !hasConnectionId || this.lastCatalogSyncConnectionId !== connectionId;
+    const shouldSyncMatrix =
+      !hasConnectionId || this.lastMatrixSyncConnectionId !== connectionId;
+
+    if (!shouldSyncCatalog && !shouldSyncMatrix) {
       return;
     }
 
     await this.db.ensureReady();
 
-    if (Number.isInteger(connectionId)) {
-      this.lastMatrixSyncConnectionId = connectionId;
+    if (hasConnectionId) {
+      if (shouldSyncCatalog) {
+        this.lastCatalogSyncConnectionId = connectionId;
+      }
+      if (shouldSyncMatrix) {
+        this.lastMatrixSyncConnectionId = connectionId;
+      }
     }
 
-    try {
-      await this.syncMatrix();
-    } catch (err) {
-      console.error('Failed to push matrix on telemetry connect:', err.message || err);
+    if (shouldSyncCatalog) {
+      try {
+        await this.syncCatalog();
+      } catch (err) {
+        console.error(
+          'Failed to sync catalog on telemetry connect:',
+          err?.message || err,
+        );
+      }
+    }
+
+    if (shouldSyncMatrix) {
+      try {
+        await this.syncMatrix();
+      } catch (err) {
+        console.error('Failed to push matrix on telemetry connect:', err.message || err);
+      }
     }
   }
 

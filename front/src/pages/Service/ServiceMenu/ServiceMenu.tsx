@@ -11,12 +11,15 @@ import { IconArrowRight } from '../../../assets/icon/iconArrowRight';
 import { IconShakerCup } from '../../../assets/icon/iconShakerCup';
 import { IconFavoriteFilled } from '../../../assets/icon/iconFavoriteFilled';
 import { MenuItem } from './types';
+import { useAppDispatch } from '../../../app/hooks/store';
+import { getProductMatrixAction } from '../../../state/client/action';
 
 /**
  * Сервисное меню
  */
 const ServiceMenu: FC = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
 
   const menuItems: MenuItem[] = [
     {
@@ -66,6 +69,11 @@ const ServiceMenu: FC = () => {
     navigate('/menu/diagnostics');
   }
 
+  const handleClose = () => {
+    dispatch(getProductMatrixAction());
+    navigate('/');
+  };
+
   // render методы
   const renderHeader = () => (
     <HorizontalContainer isAutoWidth isAutoSpace>
@@ -77,7 +85,7 @@ const ServiceMenu: FC = () => {
         size="m"
         onlyIcon
         iconLeft={IconClose}
-        onClick={() => navigate('/')}
+        onClick={handleClose}
       />
     </HorizontalContainer>
   );

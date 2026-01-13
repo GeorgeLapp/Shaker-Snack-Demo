@@ -61,6 +61,7 @@ class TelemetryDb {
     this.getAsync = promisify(this.db.get.bind(this.db));
     this.allAsync = promisify(this.db.all.bind(this.db));
     this.execAsync = promisify(this.db.exec.bind(this.db));
+    this.transactionQueue = Promise.resolve();
 
     this.matrixSeeded = false;
     this.initPromise = this.bootstrapSchemaAndMatrix();
@@ -81,6 +82,35 @@ class TelemetryDb {
     }
   }
 
+  async runInTransaction(work) {
+    await this.ensureReady();
+    const previous = this.transactionQueue;
+    let release;
+    this.transactionQueue = new Promise((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+
+    try {
+      await this.runAsync('BEGIN TRANSACTION');
+      const result = await work();
+      await this.runAsync('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await this.runAsync('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error(
+          'Failed to rollback transaction:',
+          rollbackErr?.message || rollbackErr
+        );
+      }
+      throw err;
+    } finally {
+      release();
+    }
+  }
   async bootstrapSchemaAndMatrix() {
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
     const repoRoot = path.resolve(currentDir, '..', '..');
@@ -287,8 +317,7 @@ class TelemetryDb {
    */
   async applyCatalog(items) {
     await this.ensureReady();
-    await this.runAsync('BEGIN TRANSACTION');
-    try {
+    await this.runInTransaction(async () => {
       const itemsArray = Array.isArray(items) ? items : [];
       const incomingProductIds = new Set();
       for (const item of itemsArray) {
@@ -525,11 +554,7 @@ class TelemetryDb {
         }
       );
 
-      await this.runAsync('COMMIT');
-    } catch (err) {
-      await this.runAsync('ROLLBACK');
-      throw err;
-    }
+    });
   }
 
   /**
@@ -592,8 +617,7 @@ class TelemetryDb {
    */
   async applyMatrixCellsFromServer(cells) {
     await this.ensureReady();
-    await this.runAsync('BEGIN TRANSACTION');
-    try {
+    await this.runInTransaction(async () => {
       for (const cell of cells) {
         const priceMinor = typeof cell.price === 'number'
           ? Math.round(cell.price * PRICE_SCALE)
@@ -677,11 +701,7 @@ class TelemetryDb {
         }
       );
 
-      await this.runAsync('COMMIT');
-    } catch (err) {
-      await this.runAsync('ROLLBACK');
-      throw err;
-    }
+    });
   }
 
   /**
@@ -690,8 +710,7 @@ class TelemetryDb {
    */
   async applyCellVolumesFromServer(cells) {
     await this.ensureReady();
-    await this.runAsync('BEGIN TRANSACTION');
-    try {
+    await this.runInTransaction(async () => {
       for (const cell of cells) {
         await this.runAsync(
           `
@@ -707,11 +726,7 @@ class TelemetryDb {
           }
         );
       }
-      await this.runAsync('COMMIT');
-    } catch (err) {
-      await this.runAsync('ROLLBACK');
-      throw err;
-    }
+    });
   }
 
   /**
@@ -748,8 +763,7 @@ class TelemetryDb {
       : Date.now();
     const ts = Number.isFinite(baseTs) ? baseTs : Date.now();
 
-    await this.runAsync('BEGIN TRANSACTION');
-    try {
+    await this.runInTransaction(async () => {
       for (const writeOff of writeOffs) {
         const cellNumber = writeOff.cellNumber;
         if (typeof cellNumber !== 'number') {
@@ -808,11 +822,7 @@ class TelemetryDb {
         );
       }
 
-      await this.runAsync('COMMIT');
-    } catch (err) {
-      await this.runAsync('ROLLBACK');
-      throw err;
-    }
+    });
   }
 }
 

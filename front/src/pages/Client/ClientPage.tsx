@@ -17,6 +17,8 @@ const ClientPage: FC = () => {
   const dispatch = useAppDispatch();
   const location = useLocation();
   const prevPathRef = useRef(location.pathname);
+  const locationPathRef = useRef(location.pathname);
+  const serviceMenuExitPendingRef = useRef(location.pathname.startsWith('/menu'));
 
   useEffect(() => {
     dispatch(getProductMatrixAction());
@@ -27,12 +29,37 @@ const ClientPage: FC = () => {
     const wasServiceMenu = prevPath.startsWith('/menu');
     const isServiceMenu = location.pathname.startsWith('/menu');
 
+    if (isServiceMenu) {
+      serviceMenuExitPendingRef.current = true;
+    }
+
     if (wasServiceMenu && !isServiceMenu) {
       dispatch(getProductMatrixAction());
+      serviceMenuExitPendingRef.current = false;
     }
 
     prevPathRef.current = location.pathname;
+    locationPathRef.current = location.pathname;
   }, [dispatch, location.pathname]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!serviceMenuExitPendingRef.current) return;
+      if (locationPathRef.current.startsWith('/menu')) return;
+
+      dispatch(getProductMatrixAction());
+      serviceMenuExitPendingRef.current = false;
+    };
+
+    document.addEventListener('visibilitychange', handleFocus);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [dispatch]);
 
   return (
     <div className={styles.ClientPage}>

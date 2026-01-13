@@ -1,5 +1,10 @@
 import { AppDispatch, RootState } from '../../app/store';
-import { getProductMatrixThunk, issueProductThunk, startSaleThunk } from './thunk';
+import {
+  getProductMatrixThunk,
+  issueProductThunk,
+  ProductMatrixOptions,
+  startSaleThunk,
+} from './thunk';
 import { IssueProductDTO } from '../../types/serverInterface/IssueProductDTO';
 import { StartSaleDTO } from '../../types/serverInterface/StartSaleDTO';
 import {
@@ -25,8 +30,9 @@ const ensurePaymentStageDuration = async (startedAt: number) => {
   }
 };
 
-export const getProductMatrixAction = () => (dispatch: AppDispatch) =>
-  dispatch(getProductMatrixThunk());
+export const getProductMatrixAction =
+  (options?: ProductMatrixOptions) => (dispatch: AppDispatch) =>
+    dispatch(getProductMatrixThunk(options));
 
 export const cancelSaleWorkflow = () => (dispatch: AppDispatch) => {
   dispatch(resetSaleWorkflowState());

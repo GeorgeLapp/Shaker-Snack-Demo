@@ -7,12 +7,16 @@ import { IssueProductDTO, IssueProductRes } from '../../types/serverInterface/Is
 /**
  * Получение матрицы продуктов
  */
-export const getProductMatrixThunk = createAsyncThunk<ProductMatrixDTO>(
-  'getProductMatrix',
-  async () => {
-    return await api.client.getProductMatrix();
-  },
-);
+export type ProductMatrixOptions = {
+  cacheBust?: string | number;
+};
+
+export const getProductMatrixThunk = createAsyncThunk<
+  ProductMatrixDTO,
+  ProductMatrixOptions | undefined
+>('getProductMatrix', async (options) => {
+  return await api.client.getProductMatrix(options);
+});
 
 export const startSaleThunk = createAsyncThunk<StartSaleRes, StartSaleDTO>(
   'startSale',

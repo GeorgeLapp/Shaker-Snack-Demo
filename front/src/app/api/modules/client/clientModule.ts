@@ -13,14 +13,24 @@ const ENDPOINTS = {
   issueProduct: '/api/issue-product',
 } as const;
 
+type ProductMatrixOptions = {
+  cacheBust?: string | number;
+};
+
 export class ClientModule extends AbstractApiModule {
-  getProductMatrix(): Promise<ProductMatrixDTO> {
-    return this.request.get<undefined, ProductMatrixDTO>(ENDPOINTS.productMatrix).then((matrix) =>
-      matrix.map((item) => ({
-        ...item,
-        imgPath: buildSnackMediaUrl(item.imgPath),
-      })),
-    );
+  getProductMatrix(options?: ProductMatrixOptions): Promise<ProductMatrixDTO> {
+    const cacheBust = options?.cacheBust;
+    const params =
+      cacheBust === undefined || cacheBust === null ? undefined : { _: cacheBust };
+
+    return this.request
+      .get<typeof params, ProductMatrixDTO>(ENDPOINTS.productMatrix, params)
+      .then((matrix) =>
+        matrix.map((item) => ({
+          ...item,
+          imgPath: buildSnackMediaUrl(item.imgPath, cacheBust),
+        })),
+      );
   }
 
   startSale(startSaleData: StartSaleDTO): Promise<StartSaleRes> {

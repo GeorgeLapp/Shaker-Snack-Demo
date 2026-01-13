@@ -1,6 +1,7 @@
 import { ICON_EMPTY_DATA_URL } from '../assets/icon/iconEmpty';
 
 const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
+const DATA_URL_PATTERN = /^data:/i;
 
 const SNACK_API_BASE_URL = (
   import.meta.env.VITE_APP_SNACK_API_URL || 'http://localhost:4000'
@@ -45,20 +46,37 @@ const trimPrefixFromPath = (value: string) => {
   return clean;
 };
 
-export const buildSnackMediaUrl = (path: string): string => {
+const appendCacheBust = (url: string, cacheBust?: string | number): string => {
+  if (!url || cacheBust === undefined || cacheBust === null) {
+    return url;
+  }
+
+  if (DATA_URL_PATTERN.test(url)) {
+    return url;
+  }
+
+  const [base, hash] = url.split('#');
+  const separator = base.includes('?') ? '&' : '?';
+  const withBust = `${base}${separator}v=${encodeURIComponent(String(cacheBust))}`;
+
+  return hash ? `${withBust}#${hash}` : withBust;
+};
+
+export const buildSnackMediaUrl = (path: string, cacheBust?: string | number): string => {
   if (!path) {
     return path;
   }
 
   if (ABSOLUTE_URL_PATTERN.test(path)) {
-    return path;
+    return appendCacheBust(path, cacheBust);
   }
 
   const cleanedPath = trimPrefixFromPath(path);
   const normalizedBase = MEDIA_BASE_URL.endsWith('/') ? MEDIA_BASE_URL : `${MEDIA_BASE_URL}/`;
   const normalizedPath = cleanedPath.replace(/^\/+/, '');
 
-  return normalizedPath ? `${normalizedBase}${normalizedPath}` : `${normalizedBase}`;
+  const url = normalizedPath ? `${normalizedBase}${normalizedPath}` : `${normalizedBase}`;
+  return appendCacheBust(url, cacheBust);
 };
 
 export const buildServiceMenuUrl = (productId: number, path: string): string => {

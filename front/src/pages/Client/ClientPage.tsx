@@ -28,19 +28,28 @@ const ClientPage: FC = () => {
     const prevPath = prevPathRef.current;
     const wasServiceMenu = prevPath.startsWith('/menu');
     const isServiceMenu = location.pathname.startsWith('/menu');
+    const refreshKey = (
+      location.state as { refreshProductMatrix?: number | string } | null
+    )?.refreshProductMatrix;
 
     if (isServiceMenu) {
       serviceMenuExitPendingRef.current = true;
     }
 
     if (wasServiceMenu && !isServiceMenu) {
-      dispatch(getProductMatrixAction());
+      dispatch(
+        getProductMatrixAction(
+          refreshKey === undefined || refreshKey === null
+            ? undefined
+            : { cacheBust: refreshKey },
+        ),
+      );
       serviceMenuExitPendingRef.current = false;
     }
 
     prevPathRef.current = location.pathname;
     locationPathRef.current = location.pathname;
-  }, [dispatch, location.pathname]);
+  }, [dispatch, location.pathname, location.state]);
 
   useEffect(() => {
     const handleFocus = () => {

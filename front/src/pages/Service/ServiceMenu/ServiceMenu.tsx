@@ -11,15 +11,12 @@ import { IconArrowRight } from '../../../assets/icon/iconArrowRight';
 import { IconShakerCup } from '../../../assets/icon/iconShakerCup';
 import { IconFavoriteFilled } from '../../../assets/icon/iconFavoriteFilled';
 import { MenuItem } from './types';
-import { useAppDispatch } from '../../../app/hooks/store';
-import { getProductMatrixAction } from '../../../state/client/action';
 
 /**
  * Сервисное меню
  */
 const ServiceMenu: FC = () => {
   const navigate = useNavigate();
-  const dispatch = useAppDispatch();
 
   const menuItems: MenuItem[] = [
     {
@@ -70,8 +67,7 @@ const ServiceMenu: FC = () => {
   }
 
   const handleClose = () => {
-    dispatch(getProductMatrixAction());
-    navigate('/');
+    navigate('/', { state: { refreshProductMatrix: Date.now() } });
   };
 
   // render методы

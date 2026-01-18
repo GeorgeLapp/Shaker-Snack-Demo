@@ -18,6 +18,7 @@ const AuthorizationModal: FC<AuthorizationModalProps> = ({ isOpen, onClose }) =>
   const dispatch = useAppDispatch();
 
   const [pin, setPin] = useState<string | null>(null);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const isSubmitDisabled = useMemo(() => !pin || pin.trim().length === 0, [pin]);
 
@@ -25,8 +26,17 @@ const AuthorizationModal: FC<AuthorizationModalProps> = ({ isOpen, onClose }) =>
   const handleSubmitPin = () => {
     if (isSubmitDisabled) return;
 
+    const trimmedPin = pin!.trim();
+
+    if (trimmedPin !== 'shaker2026') {
+      setPinError('Неверный пароль');
+      return;
+    }
+
+    setPinError(null);
+
     const newPin: Pin = {
-      pin: pin!.trim(),
+      pin: trimmedPin,
     };
 
     dispatch(authSubmitPinAction(newPin)).then(() => {
@@ -35,6 +45,7 @@ const AuthorizationModal: FC<AuthorizationModalProps> = ({ isOpen, onClose }) =>
   };
 
   const handleChangePin = (value: string | null) => {
+    setPinError(null);
     setPin(value);
   };
 
@@ -48,6 +59,8 @@ const AuthorizationModal: FC<AuthorizationModalProps> = ({ isOpen, onClose }) =>
       size="m"
       id="password"
       type="password"
+      status={pinError ? 'alert' : undefined}
+      caption={pinError || undefined}
       onChange={handleChangePin}
     />
   );

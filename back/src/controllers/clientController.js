@@ -24,8 +24,6 @@ const fetchImpl =
 const TELEMETRY_API_BASE_URL =
   process.env.TELEMETRY_API_BASE_URL || 'http://localhost:3002';
 
-// Warm up payment device on module load to match "start immediately" requirement.
-warmupPaymentDevice().catch(() => {});
 
 /**
  * Небольшой helper для запросов к телеметрии.

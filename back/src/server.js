@@ -5,6 +5,7 @@ const { URL } = require('url');
 const { getProductMatrix, startSale, issueProduct, cancelSale } = require('./controllers/clientController');
 const { parseJsonBody, sendJson } = require('./utils/requestUtils');
 const { logEvent } = require('./logger');
+const { warmupPaymentDevice } = require('./services/paymentDevice');
 
 const ensureLeadingSlash = (value) => (value.startsWith('/') ? value : `/${value}`);
 const ensureTrailingSlash = (value) => (value.endsWith('/') ? value : `${value}/`);
@@ -195,6 +196,26 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  logEvent('server.start', { port: PORT });
+const startServer = async () => {
+  try {
+    await warmupPaymentDevice();
+  } catch (error) {
+    logEvent('payment.hardware.startup.failed', {
+      message: error?.message,
+      stack: process.env.NODE_ENV === 'production' ? undefined : error?.stack,
+    });
+    throw error;
+  }
+
+  server.listen(PORT, () => {
+    logEvent('server.start', { port: PORT });
+  });
+};
+
+startServer().catch((error) => {
+  logEvent('server.start.failed', {
+    message: error?.message,
+    stack: process.env.NODE_ENV === 'production' ? undefined : error?.stack,
+  });
+  process.exit(1);
 });

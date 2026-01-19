@@ -446,6 +446,17 @@ function mapRowToCell(row) {
 
   // size — как в БД, без преобразований
   const size = Number(row.size ?? 0);
+  const mergedToRaw =
+    typeof row.merged_to !== 'undefined'
+      ? row.merged_to
+      : typeof row.mergedTo !== 'undefined'
+      ? row.mergedTo
+      : null;
+  const mergedTo =
+    mergedToRaw === null || typeof mergedToRaw === 'undefined'
+      ? null
+      : Number(mergedToRaw);
+  const isActive = row.enabled === 0 || row.enabled === false ? false : true;
 
   return {
     cellNumber: Number(row.cell_number),
@@ -454,7 +465,26 @@ function mapRowToCell(row) {
     size, // без изменений
     volume: Number(row.volume ?? 0),
     maxVolume: Number(row.max_volume ?? 0),
+    isActive,
+    mergedTo: Number.isFinite(mergedTo) ? mergedTo : null,
   };
+}
+
+function filterMasterCells(cells) {
+  return cells.filter((cell) => {
+    if (!cell) return false;
+    const size = Number(cell.size ?? 0);
+    if (Number.isFinite(size) && size <= 0) return false;
+
+    const mergedTo = cell.mergedTo;
+    if (mergedTo != null && mergedTo !== cell.cellNumber) return false;
+
+    return true;
+  });
+}
+
+function prepareCellsForPayload(cells) {
+  return filterMasterCells(cells).map(({ mergedTo, ...rest }) => rest);
 }
 
 /** Базовая валидация перед отправкой (значения НЕ меняем) */
@@ -479,6 +509,9 @@ function validateCells(cells) {
         `maxVolume must be >=0 integer for cell ${c.cellNumber}`
       );
     }
+    if (typeof c.isActive !== 'undefined' && typeof c.isActive !== 'boolean') {
+      errors.push(`isActive must be boolean for cell ${c.cellNumber}`);
+    }
   }
   return errors;
 }
@@ -487,13 +520,7 @@ function validateCells(cells) {
 async function readCellsAll(dbPath) {
   const sql = `
     SELECT
-      cell_number,
-      size,
-      good_id,
-      price_minor,   -- REAL (рубли)
-      volume,
-      max_volume,
-      enabled
+      *
     FROM vw_matrix_cell_full
     WHERE enabled = 1
     ORDER BY cell_number ASC
@@ -513,13 +540,7 @@ async function readCellsByNumbers(dbPath, cellNumbers) {
   const placeholders = cellNumbers.map(() => '?').join(', ');
   const sql = `
     SELECT
-      cell_number,
-      size,
-      good_id,
-      price_minor,   -- REAL (рубли)
-      volume,
-      max_volume,
-      enabled
+      *
     FROM vw_matrix_cell_full
     WHERE cell_number IN (${placeholders})
     ORDER BY cell_number ASC
@@ -556,7 +577,7 @@ export async function buildCellStoreMessageForAll({
   clientId,
   machineId,
 }) {
-  const cells = await readCellsAll(dbPath);
+  const cells = prepareCellsForPayload(await readCellsAll(dbPath));
   const validation = validateCells(cells);
   if (validation.length) {
     throw new Error(
@@ -579,7 +600,9 @@ export async function buildCellStoreMessageForCells({
   if (!Array.isArray(cellNumbers) || cellNumbers.length === 0) {
     throw new Error('cellNumbers must be a non-empty array of integers');
   }
-  const cells = await readCellsByNumbers(dbPath, cellNumbers);
+  const cells = prepareCellsForPayload(
+    await readCellsByNumbers(dbPath, cellNumbers)
+  );
 
   // проверим, что все запрошенные найдены
   const got = new Set(cells.map((c) => c.cellNumber));

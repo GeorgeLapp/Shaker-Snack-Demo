@@ -24,6 +24,17 @@ function mapRowToCell(row) {
 
   // size — как в БД, без преобразований
   const size = Number(row.size ?? 0);
+  const mergedToRaw =
+    typeof row.merged_to !== 'undefined'
+      ? row.merged_to
+      : typeof row.mergedTo !== 'undefined'
+      ? row.mergedTo
+      : null;
+  const mergedTo =
+    mergedToRaw === null || typeof mergedToRaw === 'undefined'
+      ? null
+      : Number(mergedToRaw);
+  const isActive = row.enabled === 0 || row.enabled === false ? false : true;
 
   return {
     cellNumber: Number(row.cell_number),
@@ -32,7 +43,28 @@ function mapRowToCell(row) {
     size,                                // без изменений
     volume: Number(row.volume ?? 0),
     maxVolume: Number(row.max_volume ?? 0),
+    isActive,
+    mergedTo: Number.isFinite(mergedTo) ? mergedTo : null,
   };
+}
+
+function filterMasterCells(cells) {
+  return cells.filter((cell) => {
+    if (!cell) return false;
+    const size = Number(cell.size ?? 0);
+    if (Number.isFinite(size) && size <= 0) return false; // slaves shrink to size=0
+
+    const mergedTo = cell.mergedTo;
+    if (mergedTo != null && mergedTo !== cell.cellNumber) {
+      return false; // explicit slave link
+    }
+
+    return true;
+  });
+}
+
+function prepareCellsForPayload(cells) {
+  return filterMasterCells(cells).map(({ mergedTo, ...rest }) => rest);
 }
 
 /** Базовая валидация перед отправкой (значения НЕ меняем) */
@@ -53,6 +85,9 @@ function validateCells(cells) {
     if (!Number.isInteger(c.maxVolume) || c.maxVolume < 0) {
       errors.push(`maxVolume must be >=0 integer for cell ${c.cellNumber}`);
     }
+    if (typeof c.isActive !== 'undefined' && typeof c.isActive !== 'boolean') {
+      errors.push(`isActive must be boolean for cell ${c.cellNumber}`);
+    }
   }
   return errors;
 }
@@ -61,13 +96,7 @@ function validateCells(cells) {
 function readCellsAll(dbPath) {
   const sql = `
     SELECT
-      cell_number,
-      size,
-      good_id,
-      price_minor,   -- REAL (рубли)
-      volume,
-      max_volume,
-      enabled
+      *
     FROM vw_matrix_cell_full
     WHERE enabled = 1
     ORDER BY cell_number ASC
@@ -93,13 +122,7 @@ function readCellsByNumbers(dbPath, cellNumbers) {
   const placeholders = cellNumbers.map(() => '?').join(', ');
   const sql = `
     SELECT
-      cell_number,
-      size,
-      good_id,
-      price_minor,   -- REAL (рубли)
-      volume,
-      max_volume,
-      enabled
+      *
     FROM vw_matrix_cell_full
     WHERE cell_number IN (${placeholders})
     ORDER BY cell_number ASC
@@ -135,7 +158,7 @@ function buildCellStoreMessage({ clientId, machineId, cells }) {
 
 /** Публично: все enabled ячейки → готовый JSON */
 export async function buildCellStoreMessageForAll({ dbPath, clientId, machineId }) {
-  const cells = await readCellsAll(dbPath);
+  const cells = prepareCellsForPayload(await readCellsAll(dbPath));
   const validation = validateCells(cells);
   if (validation.length) {
     throw new Error('Validation failed:\n - ' + validation.join('\n - '));
@@ -148,7 +171,9 @@ export async function buildCellStoreMessageForCells({ dbPath, clientId, machineI
   if (!Array.isArray(cellNumbers) || cellNumbers.length === 0) {
     throw new Error('cellNumbers must be a non-empty array of integers');
   }
-  const cells = await readCellsByNumbers(dbPath, cellNumbers);
+  const cells = prepareCellsForPayload(
+    await readCellsByNumbers(dbPath, cellNumbers)
+  );
 
   // проверим, что все запрошенные найдены
   const got = new Set(cells.map(c => c.cellNumber));

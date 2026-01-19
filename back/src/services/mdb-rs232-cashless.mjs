@@ -258,7 +258,6 @@ export default class MdbRs232Cashless extends EventEmitter {
       baudRate = 9600,
       debug = false,
       pollIntervalMs = 250,
-      autoPoll = true,
     } = opts || {};
 
     if (!portPath) throw new ProtocolError("portPath required", { code: "NO_PORT" });
@@ -273,7 +272,6 @@ export default class MdbRs232Cashless extends EventEmitter {
     this.baudRate = baudRate;
     this.debug = !!debug;
     this.pollIntervalMs = pollIntervalMs;
-    this.autoPoll = !!autoPoll;
 
     this.port = null;
 
@@ -330,9 +328,7 @@ export default class MdbRs232Cashless extends EventEmitter {
     this.port.on("error", (e) => this.emit("error", e));
 
     // start poller
-    if (this.autoPoll) {
-      this._startPoller();
-    }
+    this._startPoller();
 
     // optional banner
     this.emit("banner", `MDB-RS232 Cashless bridge opened on ${this.portPath} (cashless #${this.cashlessNumber}, devId=0x${this.deviceId.toString(16)})`);
@@ -347,22 +343,6 @@ export default class MdbRs232Cashless extends EventEmitter {
     if (p.isOpen) {
       await new Promise((resolve) => p.close(() => resolve()));
     }
-  }
-
-  startPoller() {
-    this._startPoller();
-  }
-
-  stopPoller() {
-    this._stopPoller();
-  }
-
-  async flush() {
-    this._rxBuf = Buffer.alloc(0);
-    if (!this.port?.isOpen || typeof this.port.flush !== "function") return;
-    await new Promise((resolve, reject) => {
-      this.port.flush((err) => (err ? reject(err) : resolve()));
-    });
   }
 
   /**
@@ -551,8 +531,6 @@ export default class MdbRs232Cashless extends EventEmitter {
     this._pollTimer = setInterval(() => {
       // best-effort, do not queue if port closed
       if (!this.port?.isOpen) return;
-      // avoid poll during active command to prevent ACK interleaving
-      if (this._inflight || this._queue.length > 0) return;
       // send poll unqueued to avoid starving; it will still receive ACK/activities
       this._write(Buffer.from([this._cmd(MDB_CASHLESS_CMD_POLL)])).catch(() => {});
     }, this.pollIntervalMs);
@@ -1006,13 +984,13 @@ export default class MdbRs232Cashless extends EventEmitter {
   /**
    * Expansion Request ID (Multi-peripheral ID).
    */
-  async expansionRequestId(timeoutMs = 1200) {
+  async expansionRequestId() {
     return await this._enqueue(async () => {
       const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_EXPANSION), MDB_EXP_SUBCMD_REQUEST_ID]);
-      await this._sendAndWait(cmd, { expect: "ACK", timeoutMs });
+      await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 800 });
 
       // The response comes as activity peripheralId (0x09) over Poll.
-      const ev = await this._waitForActivity("peripheralId", timeoutMs + 400);
+      const ev = await this._waitForActivity("peripheralId", 1200);
       return {
         manufacturer: ev.manufacturer,
         model: ev.model,
@@ -1028,17 +1006,10 @@ export default class MdbRs232Cashless extends EventEmitter {
    *
    * @param {number} optionsMask - bitmask of features (use CashlessConstants.OPT_*).
    */
-  async expansionEnableOptions(optionsMask, opts = undefined) {
+  async expansionEnableOptions(optionsMask) {
     return await this._enqueue(async () => {
       if (!Number.isInteger(optionsMask) || optionsMask < 0 || optionsMask > 0xFF) {
         throw new ProtocolError("optionsMask must be u8", { code: "BAD_OPT", details: { optionsMask } });
-      }
-
-      let timeoutMs = 900;
-      if (typeof opts === "number") {
-        timeoutMs = opts;
-      } else if (opts && Number.isFinite(opts.timeoutMs)) {
-        timeoutMs = Number(opts.timeoutMs);
       }
 
       // For this bridge, Nayax requires:
@@ -1048,7 +1019,7 @@ export default class MdbRs232Cashless extends EventEmitter {
       const [o0, o1, o2, o3] = encodeU32BE(opt32);
 
       const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_EXPANSION), MDB_EXP_SUBCMD_ENABLE, o0, o1, o2, o3]);
-      await this._sendAndWait(cmd, { expect: "ACK", timeoutMs });
+      await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 900 });
       this.expansionOptions = optionsMask & 0xFF;
       return { optionsMask: this.expansionOptions };
     });

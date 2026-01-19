@@ -27,8 +27,6 @@ const PAYMENT_PORT_PATH =
 const PAYMENT_BAUD_RATE = Number(process.env.PAYMENT_BAUD_RATE || 9600);
 const PAYMENT_CASHLESS_NUMBER = Number(process.env.PAYMENT_CASHLESS_NUMBER || 1);
 const PAYMENT_DEBUG = parseBoolean(process.env.PAYMENT_DEVICE_DEBUG, false);
-const FORCE_32BIT_PRICE = parseBoolean(process.env.PAYMENT_FORCE_32BIT_PRICE, false);
-const PAYMENT_ENABLE_32BIT = parseBoolean(process.env.PAYMENT_ENABLE_32BIT, false);
 
 class PaymentError extends Error {
   constructor(message, { code = 'PAYMENT_ERROR', statusCode = 402, details } = {}) {
@@ -44,20 +42,6 @@ let activeSession = null;
 let hardwareDriver = null;
 let hardwareInitPromise = null;
 let hardwareConstants = null;
-let hardwareOptions = {
-  alwaysIdle: null,
-  money32: PAYMENT_ENABLE_32BIT,
-  raw: null,
-};
-const PAYMENT_INIT_BOOT_DELAY_MS = Number(
-  process.env.PAYMENT_INIT_BOOT_DELAY_MS || 1200,
-);
-const PAYMENT_INIT_RETRY_COUNT = Number(
-  process.env.PAYMENT_INIT_RETRY_COUNT || 3,
-);
-const PAYMENT_INIT_RETRY_DELAY_MS = Number(
-  process.env.PAYMENT_INIT_RETRY_DELAY_MS || 800,
-);
 const PAYMENT_READER_ENABLE_DELAY_MS = Number(
   process.env.PAYMENT_READER_ENABLE_DELAY_MS || 200,
 );
@@ -170,7 +154,6 @@ const ensureHardwareDriver = async () => {
       cashlessNumber: PAYMENT_CASHLESS_NUMBER,
       baudRate: PAYMENT_BAUD_RATE,
       debug: PAYMENT_DEBUG,
-      autoPoll: false,
     });
 
     attachDriverLogging(driver);
@@ -184,11 +167,7 @@ const ensureHardwareDriver = async () => {
 
     const initSequence = async () => {
       // Reset and wake up bridge
-      try {
-        await driver.reset();
-      } catch (err) {
-        logEvent('payment.hardware.reset.failed', { message: err.message });
-      }
+      await driver.reset();
 
       // Base config (Feature Level 3, ASCII display) as in test script
       const cfg = await driver.setupConfig({
@@ -202,35 +181,20 @@ const ensureHardwareDriver = async () => {
         decimalPlaces: cfg?.decimalPlaces,
       });
 
-      const defaultMin = 0x0000;
-      const defaultMax = 0xffff;
-      let minPriceScaled = defaultMin;
-      let maxPriceScaled = defaultMax;
-      try {
-        minPriceScaled = driver.realToScaled(1.0);
-        maxPriceScaled = driver.realToScaled(500.0);
-      } catch (err) {
-        logEvent('payment.hardware.prices.scale.warn', { message: err.message });
-      }
+      const minPriceScaled = driver.realToScaled(1.0);
+      const maxPriceScaled = driver.realToScaled(500.0);
 
       await driver.setupMaxMinPrices({
         maxPriceScaled,
         minPriceScaled,
       });
 
-      const optionsMask =
-        (hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0) |
-        (hardwareOptions.money32 ? hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0 : 0);
-
       try {
-        await driver.expansionEnableOptions(optionsMask, { timeoutMs: 2000 });
+        const optionsMask = hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0;
+        await driver.expansionEnableOptions(optionsMask);
         logEvent('payment.hardware.options.enabled', { optionsMask });
       } catch (err) {
-        throw new PaymentError('Failed to enable Always Idle mode', {
-          code: 'PAYMENT_ALWAYS_IDLE_FAILED',
-          statusCode: 503,
-          details: { message: err.message },
-        });
+        logEvent('payment.hardware.options.warn', { message: err.message });
       }
 
       // Keep reader disabled in idle (Product First)
@@ -240,34 +204,7 @@ const ensureHardwareDriver = async () => {
         logEvent('payment.hardware.readerDisable.warn', { message: err.message });
       }
     };
-
-    try {
-      await sleep(PAYMENT_INIT_BOOT_DELAY_MS);
-    } catch {}
-
-    for (let attempt = 1; attempt <= PAYMENT_INIT_RETRY_COUNT; attempt += 1) {
-      try {
-        await driver.flush();
-      } catch (err) {
-        logEvent('payment.hardware.flush.warn', { message: err.message });
-      }
-
-      try {
-        await initSequence();
-        break;
-      } catch (err) {
-        if (attempt >= PAYMENT_INIT_RETRY_COUNT) {
-          throw err;
-        }
-        logEvent('payment.hardware.init.retry', {
-          attempt,
-          message: err.message,
-        });
-        await sleep(PAYMENT_INIT_RETRY_DELAY_MS);
-      }
-    }
-
-    driver.startPoller();
+    await initSequence();
 
     hardwareDriver = driver;
     return driver;
@@ -310,17 +247,14 @@ const scalePrice = (driver, price) => {
     }
   }
 
-  const supports32Bit = hardwareOptions.money32 === true;
-  if (!supports32Bit && scaled > 0xffff) {
+  if (scaled > 0xffff) {
     throw new PaymentError('Price exceeds 16-bit range for reader', {
       code: 'PRICE_TOO_LARGE',
       statusCode: 400,
       details: { price: normalized, scaled },
     });
   }
-  const use32bit =
-    supports32Bit && (FORCE_32BIT_PRICE || scaled > 0xffff);
-  return { scaled, use32bit, usedReaderScale };
+  return { scaled, use32bit: false, usedReaderScale };
 };
 
 const waitForApproval = (driver, session) =>
@@ -423,6 +357,7 @@ const processPayment = async ({ cellNumber, price, productId } = {}) => {
     createdAt: Date.now(),
   });
 
+  let vendRequested = false;
   try {
     try {
       await driver.readerEnable();
@@ -440,6 +375,7 @@ const processPayment = async ({ cellNumber, price, productId } = {}) => {
       itemNumber: cellNumber,
       use32bit,
     });
+    vendRequested = true;
     const approval = await waitForApproval(driver, activeSession);
     activeSession.state = 'approved';
     activeSession.reference = sessionId;
@@ -460,6 +396,14 @@ const processPayment = async ({ cellNumber, price, productId } = {}) => {
             code: err?.code || 'PAYMENT_FAILED',
             statusCode: err?.statusCode || 502,
           });
+    if (vendRequested) {
+      try {
+        await driver.vendCancel();
+      } catch {}
+      try {
+        await driver.sessionComplete();
+      } catch {}
+    }
     try {
       await driver.readerDisable();
     } catch (disableErr) {

@@ -215,7 +215,7 @@ const ALLOWED_CELL_TYPES = new Set(['spiral', 'conveyor']);
 
 export class ServiceMenuFSM {
   constructor(config) {
-    this.config = { sessionInactivityMs: 180000, ...config };
+    this.config = { sessionInactivityMs: 180000, prefetchTimeoutMs: 5000, ...config };
     this.backend = new ServiceMenuBackendClient(this.config.backend);
     this.state = 'Idle';
     this.ctx = { token: null, cells: [], products: [], logs: [], lastScreen: null, lastError: null, retryPoint: null };
@@ -262,23 +262,8 @@ export class ServiceMenuFSM {
           this.ctx.token = res.body.accessToken;
           // РЎРѕС…СЂР°РЅСЏРµРј СЂРѕР»СЊ РІ РєРѕРЅС‚РµРєСЃС‚Рµ, РµСЃР»Рё РЅСѓР¶РЅРѕ
           this.ctx.role = res.body.role;
-          try {
-            const syncRes = await this.backend.syncCatalog();
-            if (syncRes?.status && syncRes.status !== 200) {
-              console.warn('Catalog sync failed:', syncRes.status);
-            }
-          } catch (err) {
-            console.error('Catalog sync failed:', err?.message || err);
-          }
-          // Prefetch catalog so products list is ready after entering service menu
-          try {
-            const productsRes = await this.backend.getProducts(this.ctx.token, {});
-            if (productsRes.status === 200 && Array.isArray(productsRes.body)) {
-              this.ctx.products = productsRes.body;
-            }
-          } catch (err) {
-            console.error('Products prefetch failed:', err?.message || err);
-          }
+          // Kick off non-blocking post-login requests so dashboard opens without waiting
+          this._kickoffPostLoginPrefetch();
           return this._goto('Dashboard', { screen: 'Dashboard', message: `Role: ${this.ctx.role}` });
         }
         if (res.status === 401) return this._goto('AuthError', { screen: 'AuthInput', error: 'Wrong PIN' });
@@ -679,6 +664,38 @@ export class ServiceMenuFSM {
       return this._goto('LogsReady', { screen: 'Logs', logs });
     }
     return this._goto('BackendError', { screen: 'Error' });
+  }
+
+  _kickoffPostLoginPrefetch() {
+    const token = this.ctx.token;
+    if (!token) return;
+    const timeoutMs = this.config.prefetchTimeoutMs;
+
+    const runWithTimeout = async (promiseFactory, label) => {
+      const guardedPromise = promiseFactory().catch((err) => {
+        console.warn(`[ServiceMenu] ${label} failed:`, err?.message || err);
+        return { failed: true };
+      });
+      const timeout = new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), timeoutMs));
+      const result = await Promise.race([guardedPromise, timeout]);
+      if (result?.timedOut) {
+        console.warn(`[ServiceMenu] ${label} timed out after ${timeoutMs}ms`);
+        return null;
+      }
+      if (result?.failed) return null;
+      return result;
+    };
+
+    const jobs = [
+      runWithTimeout(() => this.backend.syncCatalog(), 'catalog sync'),
+      runWithTimeout(() => this.backend.getProducts(token, {}), 'products prefetch').then((res) => {
+        if (res && res.status === 200 && Array.isArray(res.body)) {
+          this.ctx.products = res.body;
+        }
+      }),
+    ];
+
+    void Promise.allSettled(jobs);
   }
 }
 

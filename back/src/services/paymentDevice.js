@@ -61,7 +61,7 @@ const processPayment = async ({ cellNumber, price, productId } = {}) => {
     return emulatePayment({ cellNumber, price, productId });
   }
 
-  const error = new Error('Payment device is not available');
+  const error = new Error('Payment device is not availabl');
   error.statusCode = 503;
   error.code = 'PAYMENT_DEVICE_OFFLINE';
   error.details = { cellNumber };

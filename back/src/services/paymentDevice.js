@@ -155,34 +155,35 @@ const ensureHardwareDriver = async () => {
       cashlessNumber: PAYMENT_CASHLESS_NUMBER,
     });
 
+    // Reset and wake up bridge
     try {
       await driver.reset();
     } catch (err) {
       logEvent('payment.hardware.reset.failed', { message: err.message });
     }
 
-    try {
-      const cfg = await driver.setupConfig({
-        vmcFeatureLevel: 3,
-        columns: 0,
-        rows: 0,
-        displayType: 'fullAscii',
-      });
-      logEvent('payment.hardware.readerConfig', {
-        scalingFactor: cfg?.scalingFactor,
-        decimalPlaces: cfg?.decimalPlaces,
-      });
-    } catch (err) {
-      logEvent('payment.hardware.setupConfig.error', { message: err.message });
-    }
+    // Base config (Feature Level 3, ASCII display)
+    const cfg = await driver.setupConfig({
+      vmcFeatureLevel: 3,
+      columns: 0,
+      rows: 0,
+      displayType: 'fullAscii',
+    });
+    logEvent('payment.hardware.readerConfig', {
+      scalingFactor: cfg?.scalingFactor,
+      decimalPlaces: cfg?.decimalPlaces,
+    });
 
+    await driver.setupMaxMinPrices({
+      maxPriceScaled: 0xffff,
+      minPriceScaled: 0x0000,
+    });
+
+    // Request optional feature bits then enable Always Idle + 32-bit money
     try {
-      await driver.setupMaxMinPrices({
-        maxPriceScaled: 0xffff,
-        minPriceScaled: 0x0000,
-      });
+      await driver.expansionRequestId();
     } catch (err) {
-      logEvent('payment.hardware.prices.warn', { message: err.message });
+      logEvent('payment.hardware.expansion.requestId.warn', { message: err.message });
     }
 
     const optionsMask =
@@ -193,7 +194,11 @@ const ensureHardwareDriver = async () => {
       await driver.expansionEnableOptions(optionsMask);
       logEvent('payment.hardware.options.enabled', { optionsMask });
     } catch (err) {
-      logEvent('payment.hardware.options.error', { message: err.message });
+      throw new PaymentError('Failed to enable Always Idle mode', {
+        code: 'PAYMENT_ALWAYS_IDLE_FAILED',
+        statusCode: 503,
+        details: { message: err.message },
+      });
     }
 
     try {

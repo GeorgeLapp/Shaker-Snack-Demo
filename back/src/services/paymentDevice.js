@@ -28,6 +28,7 @@ const PAYMENT_BAUD_RATE = Number(process.env.PAYMENT_BAUD_RATE || 9600);
 const PAYMENT_CASHLESS_NUMBER = Number(process.env.PAYMENT_CASHLESS_NUMBER || 1);
 const PAYMENT_DEBUG = parseBoolean(process.env.PAYMENT_DEVICE_DEBUG, false);
 const FORCE_32BIT_PRICE = parseBoolean(process.env.PAYMENT_FORCE_32BIT_PRICE, false);
+const PAYMENT_ENABLE_32BIT = parseBoolean(process.env.PAYMENT_ENABLE_32BIT, false);
 
 class PaymentError extends Error {
   constructor(message, { code = 'PAYMENT_ERROR', statusCode = 402, details } = {}) {
@@ -45,7 +46,7 @@ let hardwareInitPromise = null;
 let hardwareConstants = null;
 let hardwareOptions = {
   alwaysIdle: null,
-  money32: null,
+  money32: PAYMENT_ENABLE_32BIT,
   raw: null,
 };
 const PAYMENT_INIT_BOOT_DELAY_MS = Number(
@@ -56,6 +57,9 @@ const PAYMENT_INIT_RETRY_COUNT = Number(
 );
 const PAYMENT_INIT_RETRY_DELAY_MS = Number(
   process.env.PAYMENT_INIT_RETRY_DELAY_MS || 800,
+);
+const PAYMENT_READER_ENABLE_DELAY_MS = Number(
+  process.env.PAYMENT_READER_ENABLE_DELAY_MS || 200,
 );
 
 const clearExpiredSession = () => {
@@ -186,55 +190,7 @@ const ensureHardwareDriver = async () => {
         logEvent('payment.hardware.reset.failed', { message: err.message });
       }
 
-      // Request optional feature bits then enable Always Idle (early init)
-      let idInfo = null;
-      try {
-        idInfo = await driver.expansionRequestId(1600);
-      } catch (err) {
-        logEvent('payment.hardware.expansion.requestId.warn', { message: err.message });
-      }
-
-      if (idInfo?.options && Buffer.isBuffer(idInfo.options) && idInfo.options.length > 0) {
-        const optByte = idInfo.options[idInfo.options.length - 1];
-        hardwareOptions = {
-          alwaysIdle: (optByte & (hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0)) !== 0,
-          money32: (optByte & (hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0)) !== 0,
-          raw: idInfo.options,
-        };
-        logEvent('payment.hardware.options.detected', {
-          raw: idInfo.options.toString('hex').toUpperCase(),
-          alwaysIdle: hardwareOptions.alwaysIdle,
-          money32: hardwareOptions.money32,
-        });
-      } else {
-        hardwareOptions = { alwaysIdle: null, money32: null, raw: null };
-        logEvent('payment.hardware.options.unknown', {});
-      }
-
-      if (hardwareOptions.alwaysIdle === false) {
-        throw new PaymentError('Always Idle is not supported by reader', {
-          code: 'PAYMENT_ALWAYS_IDLE_UNSUPPORTED',
-          statusCode: 503,
-          details: { options: hardwareOptions.raw?.toString('hex') || null },
-        });
-      }
-
-      const optionsMask =
-        (hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0) |
-        (hardwareOptions.money32 ? hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0 : 0);
-
-      try {
-        await driver.expansionEnableOptions(optionsMask, { timeoutMs: 1500 });
-        logEvent('payment.hardware.options.enabled', { optionsMask });
-      } catch (err) {
-        throw new PaymentError('Failed to enable Always Idle mode', {
-          code: 'PAYMENT_ALWAYS_IDLE_FAILED',
-          statusCode: 503,
-          details: { message: err.message },
-        });
-      }
-
-      // Base config (Feature Level 3, ASCII display)
+      // Base config (Feature Level 3, ASCII display) as in test script
       const cfg = await driver.setupConfig({
         vmcFeatureLevel: 3,
         columns: 0,
@@ -246,23 +202,42 @@ const ensureHardwareDriver = async () => {
         decimalPlaces: cfg?.decimalPlaces,
       });
 
+      const defaultMin = 0x0000;
+      const defaultMax = 0xffff;
+      let minPriceScaled = defaultMin;
+      let maxPriceScaled = defaultMax;
+      try {
+        minPriceScaled = driver.realToScaled(1.0);
+        maxPriceScaled = driver.realToScaled(500.0);
+      } catch (err) {
+        logEvent('payment.hardware.prices.scale.warn', { message: err.message });
+      }
+
       await driver.setupMaxMinPrices({
-        maxPriceScaled: 0xffff,
-        minPriceScaled: 0x0000,
+        maxPriceScaled,
+        minPriceScaled,
       });
 
-      // Re-apply Always Idle after setup to ensure it stays enabled.
-      await driver.expansionEnableOptions(optionsMask, { timeoutMs: 1500 });
-      logEvent('payment.hardware.options.reapplied', { optionsMask });
+      const optionsMask =
+        (hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0) |
+        (hardwareOptions.money32 ? hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0 : 0);
 
       try {
-        await driver.readerEnable();
+        await driver.expansionEnableOptions(optionsMask, { timeoutMs: 2000 });
+        logEvent('payment.hardware.options.enabled', { optionsMask });
       } catch (err) {
-        throw new PaymentError('Failed to enable cashless reader', {
-          code: 'PAYMENT_READER_ENABLE_FAILED',
+        throw new PaymentError('Failed to enable Always Idle mode', {
+          code: 'PAYMENT_ALWAYS_IDLE_FAILED',
           statusCode: 503,
           details: { message: err.message },
         });
+      }
+
+      // Keep reader disabled in idle (Product First)
+      try {
+        await driver.readerDisable();
+      } catch (err) {
+        logEvent('payment.hardware.readerDisable.warn', { message: err.message });
       }
     };
 
@@ -449,6 +424,17 @@ const processPayment = async ({ cellNumber, price, productId } = {}) => {
   });
 
   try {
+    try {
+      await driver.readerEnable();
+      await sleep(PAYMENT_READER_ENABLE_DELAY_MS);
+    } catch (err) {
+      throw new PaymentError('Failed to enable cashless reader', {
+        code: 'PAYMENT_READER_ENABLE_FAILED',
+        statusCode: 503,
+        details: { message: err.message },
+      });
+    }
+
     await driver.vendRequest({
       priceScaled: scaled,
       itemNumber: cellNumber,
@@ -474,6 +460,11 @@ const processPayment = async ({ cellNumber, price, productId } = {}) => {
             code: err?.code || 'PAYMENT_FAILED',
             statusCode: err?.statusCode || 502,
           });
+    try {
+      await driver.readerDisable();
+    } catch (disableErr) {
+      logEvent('payment.hardware.readerDisable.warn', { message: disableErr?.message });
+    }
     setActiveSession(null);
     throw wrapped;
   }
@@ -492,6 +483,11 @@ const cancelPayment = async () => {
       await driver.sessionComplete();
     } catch (err) {
       logEvent('payment.hardware.cancel.sessionComplete.warn', { message: err.message });
+    }
+    try {
+      await driver.readerDisable();
+    } catch (err) {
+      logEvent('payment.hardware.readerDisable.warn', { message: err.message });
     }
   } catch (err) {
     logEvent('payment.hardware.cancel.error', { message: err?.message });
@@ -532,6 +528,11 @@ const finalizePaymentAfterVend = async ({
       logEvent('payment.hardware.sessionComplete.warn', {
         message: err.message,
       });
+    }
+    try {
+      await driver.readerDisable();
+    } catch (err) {
+      logEvent('payment.hardware.readerDisable.warn', { message: err.message });
     }
   } catch (err) {
     logEvent('payment.hardware.finalize.error', {

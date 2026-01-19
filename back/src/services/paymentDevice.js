@@ -19,8 +19,11 @@ const PAYMENT_APPROVAL_TIMEOUT_MS = Number(
 const PAYMENT_SESSION_TTL_MS = Number(
   process.env.PAYMENT_SESSION_TTL_MS || 60000,
 );
+const DEFAULT_PAYMENT_PORT_PATH = '/dev/ttyS4';
 const PAYMENT_PORT_PATH =
-  process.env.PAYMENT_PORT_PATH || process.env.PAYMENT_DEVICE_PORT_PATH || null;
+  process.env.PAYMENT_PORT_PATH ||
+  process.env.PAYMENT_DEVICE_PORT_PATH ||
+  DEFAULT_PAYMENT_PORT_PATH;
 const PAYMENT_BAUD_RATE = Number(process.env.PAYMENT_BAUD_RATE || 9600);
 const PAYMENT_CASHLESS_NUMBER = Number(process.env.PAYMENT_CASHLESS_NUMBER || 1);
 const PAYMENT_DEBUG = parseBoolean(process.env.PAYMENT_DEVICE_DEBUG, false);

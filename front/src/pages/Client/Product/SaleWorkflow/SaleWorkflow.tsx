@@ -53,13 +53,13 @@ const SaleWorkflow: FC<SaleWorkflowProps> = ({ cell, onClose }) => {
     dispatch(startSaleWorkflow(cell));
 
     return () => {
-      dispatch(cancelSaleWorkflow());
+      dispatch(cancelSaleWorkflow({ cellNumber: cell.cellNumber }));
     };
   }, [dispatch, cell]);
 
   // Обработчики
   const handleClose = () => {
-    dispatch(cancelSaleWorkflow());
+    dispatch(cancelSaleWorkflow({ cellNumber: cell.cellNumber }));
     onClose();
 
     if (workflowSaleStatus === SaleWorkflowStatus.Dispensed) {

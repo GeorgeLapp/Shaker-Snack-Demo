@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
-const { getProductMatrix, startSale, issueProduct } = require('./controllers/clientController');
+const { getProductMatrix, startSale, issueProduct, cancelSale } = require('./controllers/clientController');
 const { parseJsonBody, sendJson } = require('./utils/requestUtils');
 const { logEvent } = require('./logger');
 const {
@@ -192,6 +192,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && pathname === '/api/issue-product') {
       const payload = await parseJsonBody(req);
       const data = await issueProduct(payload);
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/cancel-sale') {
+      const payload = await parseJsonBody(req);
+      const data = await cancelSale(payload);
       sendJson(res, 200, data);
       return;
     }

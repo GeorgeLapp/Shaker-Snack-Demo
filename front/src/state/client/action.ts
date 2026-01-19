@@ -4,6 +4,7 @@ import {
   issueProductThunk,
   ProductMatrixOptions,
   startSaleThunk,
+  cancelSaleThunk,
 } from './thunk';
 import { IssueProductDTO } from '../../types/serverInterface/IssueProductDTO';
 import { StartSaleDTO } from '../../types/serverInterface/StartSaleDTO';
@@ -34,9 +35,18 @@ export const getProductMatrixAction =
   (options?: ProductMatrixOptions) => (dispatch: AppDispatch) =>
     dispatch(getProductMatrixThunk(options));
 
-export const cancelSaleWorkflow = () => (dispatch: AppDispatch) => {
-  dispatch(resetSaleWorkflowState());
-};
+export const cancelSaleWorkflow =
+  (data?: StartSaleDTO) =>
+  async (dispatch: AppDispatch) => {
+    if (data?.cellNumber) {
+      try {
+        await dispatch(cancelSaleThunk({ cellNumber: data.cellNumber })).unwrap();
+      } catch {
+        // ignore cancel errors to avoid blocking UI
+      }
+    }
+    dispatch(resetSaleWorkflowState());
+  };
 
 export const startSaleWorkflow =
   (data: IssueProductDTO & StartSaleDTO) => async (dispatch: AppDispatch, getState: () => RootState) => {

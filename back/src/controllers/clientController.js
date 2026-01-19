@@ -2,7 +2,13 @@
 
 const { logEvent } = require('../logger');
 const { vendProduct } = require('../services/vendingControllerClient');
-const { processPayment } = require('../services/paymentDevice');
+const {
+  processPayment,
+  finalizePaymentAfterVend,
+  cancelPayment,
+  PaymentError,
+  warmupPaymentDevice,
+} = require('../services/paymentDevice');
 const PRICE_SCALE = 100;
 
 // Support Node < 18, where global fetch may be missing
@@ -18,6 +24,9 @@ const fetchImpl =
 // По умолчанию совпадает с HTTP_PORT из telemetry-config.mjs (3002).
 const TELEMETRY_API_BASE_URL =
   process.env.TELEMETRY_API_BASE_URL || 'http://localhost:3002';
+
+// Warm up payment device on module load to match "start immediately" requirement.
+warmupPaymentDevice().catch(() => {});
 
 /**
  * Небольшой helper для запросов к телеметрии.
@@ -334,6 +343,11 @@ const issueProduct = async (payload) => {
       channel: Number(product.cellNumber),
     });
 
+    await finalizePaymentAfterVend({
+      cellNumber: product.cellNumber,
+      success: true,
+    });
+
     logEvent('client.issueProduct.accepted', {
       cellNumber: product.cellNumber,
       productId: product.productId ?? null,
@@ -343,6 +357,12 @@ const issueProduct = async (payload) => {
 
     return { success: true };
   } catch (error) {
+    await finalizePaymentAfterVend({
+      cellNumber: product.cellNumber,
+      success: false,
+      reason: error?.message,
+    });
+
     logEvent('client.issueProduct.failed', {
       cellNumber: product.cellNumber,
       productId: product.productId ?? null,
@@ -359,8 +379,31 @@ const issueProduct = async (payload) => {
   }
 };
 
+const cancelSale = async (payload) => {
+  logEvent('client.cancelSale', payload || {});
+
+  const product = await validatePayload(payload);
+
+  try {
+    await cancelPayment();
+    logEvent('client.cancelSale.success', { cellNumber: product.cellNumber });
+  } catch (error) {
+    const statusCode =
+      error?.statusCode && Number.isInteger(error.statusCode)
+        ? error.statusCode
+        : 500;
+    const wrappedError = new Error(error?.message || 'Failed to cancel payment');
+    wrappedError.statusCode = statusCode;
+    wrappedError.code = error?.code;
+    throw wrappedError;
+  }
+
+  return { success: true };
+};
+
 module.exports = {
   getProductMatrix,
   startSale,
   issueProduct,
+  cancelSale,
 };

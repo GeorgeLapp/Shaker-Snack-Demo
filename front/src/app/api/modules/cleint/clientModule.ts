@@ -8,6 +8,7 @@ const ENDPOINTS = {
   productMatrix: '/api/product-matrix',
   startSale: '/api/start-sale',
   issueProduct: '/api/issue-product',
+  cancelSale: '/api/cancel-sale',
 } as const;
 
 export class ClientModule extends AbstractApiModule {
@@ -31,5 +32,9 @@ export class ClientModule extends AbstractApiModule {
       ENDPOINTS.issueProduct,
       issueProductData,
     );
+  }
+
+  cancelSale(cancelSaleData: StartSaleDTO): Promise<StartSaleRes> {
+    return this.request.post<StartSaleDTO, StartSaleRes>(ENDPOINTS.cancelSale, cancelSaleData);
   }
 }

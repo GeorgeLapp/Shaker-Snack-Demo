@@ -31,3 +31,10 @@ export const issueProductThunk = createAsyncThunk<IssueProductRes, IssueProductD
     return await api.client.issueProduct(issueProductData);
   },
 );
+
+export const cancelSaleThunk = createAsyncThunk<StartSaleRes, StartSaleDTO>(
+  'cancelSale',
+  async (cancelSaleData) => {
+    return await api.client.cancelSale(cancelSaleData);
+  },
+);

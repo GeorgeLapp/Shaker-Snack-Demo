@@ -152,7 +152,7 @@ const ensureHardwareDriver = async () => {
     const driver = new Driver({
       portPath: PAYMENT_PORT_PATH,
       cashlessNumber: PAYMENT_CASHLESS_NUMBER,
-      baudRate: PAYMENT_BAUD_RATE,
+      serial: { baudRate: PAYMENT_BAUD_RATE },
       debug: PAYMENT_DEBUG,
     });
 

@@ -1,19 +1,165 @@
 // mdb-rs232-cashless.mjs
 // ESM module for Node.js
 //
-// Implements VMC-side control of a Wafer MDB-RS232 bridge for MDB cashless reader (Nayax etc).
-// Focus: cashless only (no coin/bill logic), with practical helpers for Product-First (Always Idle) flows.
+// Implements VMC <-> Wafer MDB-RS232 bridge communication for MDB Cashless Reader (cashless only).
+// Key bridge rules (Wafer):
+//  - TX: raw binary bytes, no CR/LF.
+//  - RX: ASCII-HEX text lines terminated by CRLF.
+//  - Reply data: NO DeviceID prefix (often 00 ACK / FF NAK). Multi-byte reply ends with CHK.
+//  - Activity data: ALWAYS starts with DeviceID (08/30/10/60) and usually has NO CHK.
+//  - Multi-message: after each received block VMC must send single byte 00 to get the next block.
 
 import { EventEmitter } from "node:events";
-import { SerialPort } from "serialport";
+import { setTimeout as delay } from "node:timers/promises";
 
 /**
  * ----------------------------
- * Protocol errors
+ * RS232 framing / ASCII parsing
  * ----------------------------
  */
-export class ProtocolError extends Error {
-  constructor(message, { code = "PROTO", details = {} } = {}) {
+
+/** CR (carriage return) byte in RX framing. */
+const RX_CR = 0x0D;
+/** LF (line feed) byte in RX framing. */
+const RX_LF = 0x0A;
+
+/**
+ * Bridge-level ACK that VMC sends to request the next multi-message block.
+ * NOTE: This is a single raw byte 0x00 on TX, NOT ASCII "00".
+ */
+const BRIDGE_BLOCK_ACK = 0x00;
+
+/**
+ * How many "kick" 0x00 bytes we send after EXPANSION/00 to trigger the FIRST block.
+ * Some Wafer firmwares won't start sending Peripheral ID until they see 0x00.
+ * We LIMIT these kicks to avoid spamming TX/debug logs when device never responds.
+ */
+const MULTI_FIRST_BLOCK_KICK_MAX = 10;
+
+/** Delay before first kick (ms) to let bridge forward 17 00 first. */
+const MULTI_FIRST_BLOCK_KICK_START_DELAY_MS = 120;
+
+/** Interval between kicks while waiting for the first bytes (ms). */
+const MULTI_FIRST_BLOCK_KICK_INTERVAL_MS = 200;
+
+/** Bridge reply ACK byte (reply data). */
+const BRIDGE_REPLY_ACK = 0x00;
+/** Bridge reply NAK byte (reply data). */
+const BRIDGE_REPLY_NAK = 0xFF;
+
+/**
+ * ----------------------------
+ * Wafer DeviceIDs (activity prefix)
+ * ----------------------------
+ * These bytes appear as the FIRST byte of activity data pushed by the bridge.
+ */
+const DEVICE_ID_COIN_CHANGER = 0x08;
+const DEVICE_ID_BILL_VALIDATOR = 0x30;
+const DEVICE_ID_CASHLESS_1 = 0x10;
+const DEVICE_ID_CASHLESS_2 = 0x60;
+
+/**
+ * For Cashless #2, all command codes are Cashless#1 code + 0x50 (MDB addressing scheme for Wafer docs).
+ */
+const CASHLESS_2_CMD_OFFSET = 0x50;
+
+/**
+ * ----------------------------
+ * MDB Cashless command codes (Cashless #1 base)
+ * ----------------------------
+ * Real command byte = BASE + offset (offset 0x00 for cashless#1, 0x50 for cashless#2).
+ */
+const MDB_CASHLESS_CMD_RESET = 0x10;
+const MDB_CASHLESS_CMD_SETUP = 0x11;
+const MDB_CASHLESS_CMD_VEND = 0x13;
+const MDB_CASHLESS_CMD_READER_CONTROL = 0x14;
+const MDB_CASHLESS_CMD_REVALUE = 0x15;
+const MDB_CASHLESS_CMD_EXPANSION = 0x17;
+
+/**
+ * SETUP subcommands.
+ */
+const MDB_SETUP_SUBCMD_CONFIG_DATA = 0x00;
+const MDB_SETUP_SUBCMD_MAX_MIN_PRICES = 0x01;
+
+/**
+ * READER CONTROL subcommands.
+ */
+const MDB_READER_CTRL_DISABLE = 0x00;
+const MDB_READER_CTRL_ENABLE = 0x01;
+/**
+ * Some readers support CANCEL via 14 02 (seen in Wafer manual),
+ * but cashless-doc focuses on 14 00/01 for disable/enable.
+ */
+const MDB_READER_CTRL_CANCEL = 0x02;
+
+/**
+ * VEND subcommands.
+ */
+const MDB_VEND_SUBCMD_REQUEST = 0x00;
+const MDB_VEND_SUBCMD_CANCEL = 0x01;
+const MDB_VEND_SUBCMD_SUCCESS = 0x02;
+const MDB_VEND_SUBCMD_FAILURE = 0x03;
+const MDB_VEND_SUBCMD_SESSION_COMPLETE = 0x04;
+/** CASH SALE (not required for basic snack flow, but kept for completeness). */
+const MDB_VEND_SUBCMD_CASH_SALE = 0x05;
+
+/**
+ * REVALUE subcommands.
+ */
+const MDB_REVALUE_SUBCMD_REQUEST = 0x00;
+const MDB_REVALUE_SUBCMD_LIMIT_REQUEST = 0x01;
+
+/**
+ * EXPANSION subcommands.
+ */
+const MDB_EXPANSION_SUBCMD_REQUEST_ID = 0x00;
+const MDB_EXPANSION_SUBCMD_OPTIONAL_FEATURE_ENABLE = 0x04;
+
+/**
+ * Optional Feature Bits (32-bit) for EXPANSION/04 (MDB 4.2).
+ */
+const OPT_FEATURE_FILE_TRANSPORT_LAYER = 0x00000001;
+const OPT_FEATURE_32BIT_MONEY = 0x00000002;
+const OPT_FEATURE_MULTI_CURRENCY_LANG = 0x00000004;
+const OPT_FEATURE_NEGATIVE_VEND = 0x00000008;
+const OPT_FEATURE_DATA_ENTRY = 0x00000010;
+const OPT_FEATURE_ALWAYS_IDLE = 0x00000020;
+
+/**
+ * ----------------------------
+ * MDB Poll/Activity response codes (cashless, after DeviceID)
+ * ----------------------------
+ */
+const POLL_JUST_RESET = 0x00;
+const POLL_READER_CONFIG_DATA = 0x01;
+const POLL_DISPLAY_REQUEST = 0x02;
+const POLL_BEGIN_SESSION = 0x03;
+const POLL_SESSION_CANCEL_REQUEST = 0x04;
+const POLL_VEND_APPROVED = 0x05;
+const POLL_VEND_DENIED = 0x06;
+const POLL_END_SESSION = 0x07;
+const POLL_CANCELLED = 0x08;
+const POLL_PERIPHERAL_ID = 0x09;
+const POLL_MALFUNCTION = 0x0A;
+const POLL_CMD_OUT_OF_SEQUENCE = 0x0B;
+const POLL_REVALUE_APPROVED = 0x0D;
+const POLL_REVALUE_DENIED = 0x0E;
+const POLL_REVALUE_LIMIT_AMOUNT = 0x0F;
+
+/**
+ * Peripheral ID payload length (without DeviceID prefix):
+ *  1 (0x09) + 3 (mfg) + 12 (serial) + 12 (model) + 2 (ver) + 4 (optional bits) = 34 bytes.
+ */
+const PERIPHERAL_ID_TOTAL_LEN = 34;
+
+/**
+ * ----------------------------
+ * Errors
+ * ----------------------------
+ */
+class ProtocolError extends Error {
+  constructor(message, { code, details } = {}) {
     super(message);
     this.name = "ProtocolError";
     this.code = code;
@@ -23,106 +169,49 @@ export class ProtocolError extends Error {
 
 /**
  * ----------------------------
- * MDB-RS232 / Wafer framing
+ * Small helpers (no magic numbers)
  * ----------------------------
- *
- * NOTE:
- * This module implements the RS-232 framing used by the Wafer MDB-RS232 bridge as used in this project:
- * - Simple command frames (no ASCII wrapper)
- * - ACK is single byte 0x00
- * - Cashless “activity” frames are prefixed with DeviceID (0x10 or 0x60), followed by code + payload
- *
- * The module is designed to be tolerant to “silence” where bridge may ACK but not send an immediate reply.
  */
+function toHex2(b) {
+  return b.toString(16).toUpperCase().padStart(2, "0");
+}
+
+function bufToHexSpaced(buf) {
+  return [...buf].map(toHex2).join(" ");
+}
 
 /**
- * ----------------------------
- * Device IDs as used by Wafer bridge
- * ----------------------------
- *
- * DEVICE_ID_CASHLESS_1: Cashless device #1 (MDB address 0x10)
- * DEVICE_ID_CASHLESS_2: Cashless device #2 (MDB address 0x60)
+ * Parse ASCII-HEX line into bytes.
+ * Accepts extra spaces. Throws if tokens are not 2-hex chars.
  */
-const DEVICE_ID_COIN_CHANGER = 0x08;
-const DEVICE_ID_BILL_VALIDATOR = 0x30;
-const DEVICE_ID_CASHLESS_1 = 0x10;
-const DEVICE_ID_CASHLESS_2 = 0x60;
+function parseAsciiHexLineToBytes(line) {
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  const out = [];
+  for (const t of tokens) {
+    if (!/^[0-9a-fA-F]{2}$/.test(t)) {
+      throw new ProtocolError("Non-hex token in RX line", {
+        code: "RX_NOT_HEX",
+        details: { token: t, line },
+      });
+    }
+    out.push(parseInt(t, 16));
+  }
+  return Buffer.from(out);
+}
 
 /**
- * ----------------------------
- * MDB CASHLESS commands (VMC -> bridge -> MDB bus)
- * ----------------------------
+ * MDB checksum (CHK) = 8-bit sum of bytes without CHK.
  */
-const MDB_CASHLESS_CMD_POLL = 0x10; // Cashless Poll
-const MDB_CASHLESS_CMD_SETUP = 0x11; // Cashless Setup
-const MDB_CASHLESS_CMD_READER = 0x14; // Reader enable/disable
-const MDB_CASHLESS_CMD_VEND = 0x13; // Vend commands (request/cancel/success/failure/session complete)
-const MDB_CASHLESS_CMD_REVALUE = 0x15; // Revalue commands
-const MDB_CASHLESS_CMD_EXPANSION = 0x17; // Expansion commands (options, ID request, etc.)
-
-/**
- * ----------------------------
- * Cashless Setup subcommands
- * ----------------------------
- */
-const MDB_SETUP_SUBCMD_CONFIG = 0x00; // Setup/config
-const MDB_SETUP_SUBCMD_MAX_MIN_PRICES = 0x01; // Setup max/min prices (bridge-specific packaging)
-
-/**
- * ----------------------------
- * Cashless Reader subcommands
- * ----------------------------
- */
-const MDB_READER_SUBCMD_DISABLE = 0x00;
-const MDB_READER_SUBCMD_ENABLE = 0x01;
-
-/**
- * ----------------------------
- * Cashless Vend subcommands
- * ----------------------------
- */
-const MDB_VEND_SUBCMD_REQUEST = 0x00;
-const MDB_VEND_SUBCMD_CANCEL = 0x01;
-const MDB_VEND_SUBCMD_SUCCESS = 0x02;
-const MDB_VEND_SUBCMD_FAILURE = 0x03;
-const MDB_VEND_SUBCMD_SESSION_COMPLETE = 0x04;
-
-/**
- * ----------------------------
- * Cashless Revalue subcommands
- * ----------------------------
- */
-const MDB_REVALUE_SUBCMD_REQUEST = 0x00;
-const MDB_REVALUE_SUBCMD_LIMIT = 0x01;
-
-/**
- * ----------------------------
- * Cashless Expansion subcommands (bridge-level)
- * ----------------------------
- */
-const MDB_EXP_SUBCMD_REQUEST_ID = 0x00;
-const MDB_EXP_SUBCMD_ENABLE = 0x04;
-
-/**
- * ----------------------------
- * Expansion enable option bits (CashlessConstants exports below)
- * ----------------------------
- */
-const OPT_FEATURE_ALWAYS_IDLE = 0x20; // b5 (Always Idle / Product First)
-const OPT_FEATURE_32BIT_MONEY = 0x02; // bridge/project bit mapping (see CashlessConstants)
-
-/**
- * ----------------------------
- * Utilities
- * ----------------------------
- */
-function toHex(buf) {
-  if (!buf) return "";
-  return Buffer.from(buf).toString("hex").toUpperCase().replace(/(..)/g, "$1 ").trim();
+function mdbChk8(bytesWithoutChk) {
+  let s = 0;
+  for (const b of bytesWithoutChk) s = (s + b) & 0xFF;
+  return s;
 }
 
 function u16be(hi, lo) {
-  return ((hi & 0xFF) << 8) | (lo & 0xFF);
+  return ((hi << 8) | lo) >>> 0;
 }
 
 function encodeU16BE(v) {
@@ -149,81 +238,6 @@ function decodeU32BE(b0, b1, b2, b3) {
 }
 
 /**
- * ----------------------------
- * Cashless BEGIN SESSION paymentType (MDB 4.2)
- * ----------------------------
- *
- * paymentType is a single byte in BEGIN SESSION. High bits describe media type:
- *  - b7=1: Free vend card
- *  - else b6=1: Test media
- *  - else: Normal media
- *
- * Low 6 bits (b5..b0) describe pricing/discount mode and define meaning of paymentData bytes.
- * paymentData is typically 2 bytes (Z9..Z10) in Level 2/3 BEGIN SESSION.
- */
-const PAYMENT_TYPE_FLAG_FREE_VEND = 0x80; // b7
-const PAYMENT_TYPE_FLAG_TEST_MEDIA = 0x40; // b6
-const PAYMENT_TYPE_MODE_MASK = 0x3F; // b5..b0
-
-// Low-6-bit pricing modes (paymentType & 0x3F)
-const PAYMENT_TYPE_MODE_DEFAULT_PRICES = 0x00; // Use VMC default prices; paymentData ignored
-const PAYMENT_TYPE_MODE_USERGROUP_PRICELIST = 0x01; // paymentDataHi=userGroup, paymentDataLo=priceListNumber
-const PAYMENT_TYPE_MODE_USERGROUP_DISCOUNTGROUP = 0x02; // paymentDataHi=userGroup, paymentDataLo=discountGroupIndex
-const PAYMENT_TYPE_MODE_DISCOUNT_PERCENT = 0x03; // paymentDataLo=0..100 (% discount); paymentDataHi usually 0x00
-const PAYMENT_TYPE_MODE_SURCHARGE_PERCENT = 0x04; // paymentDataLo=0..100 (% surcharge); paymentDataHi usually 0x00
-
-function decodePaymentType(paymentType, paymentDataHi = 0x00, paymentDataLo = 0x00) {
-  const paymentData16 = ((paymentDataHi << 8) | paymentDataLo) & 0xFFFF;
-
-  const isFreeVend = (paymentType & PAYMENT_TYPE_FLAG_FREE_VEND) !== 0;
-  const isTestMedia = !isFreeVend && (paymentType & PAYMENT_TYPE_FLAG_TEST_MEDIA) !== 0;
-
-  const cardClass = isFreeVend ? "freeVend" : (isTestMedia ? "test" : "normal");
-
-  const mode = paymentType & PAYMENT_TYPE_MODE_MASK;
-
-  const info = {
-    raw: paymentType,
-    cardClass,
-    isFreeVend,
-    isTestMedia,
-    mode,
-    paymentDataHi,
-    paymentDataLo,
-    paymentData16,
-  };
-
-  switch (mode) {
-    case PAYMENT_TYPE_MODE_DEFAULT_PRICES:
-      info.modeName = "defaultPrices";
-      break;
-    case PAYMENT_TYPE_MODE_USERGROUP_PRICELIST:
-      info.modeName = "userGroup+priceList";
-      info.userGroup = paymentDataHi;
-      info.priceListNumber = paymentDataLo;
-      break;
-    case PAYMENT_TYPE_MODE_USERGROUP_DISCOUNTGROUP:
-      info.modeName = "userGroup+discountGroup";
-      info.userGroup = paymentDataHi;
-      info.discountGroupIndex = paymentDataLo;
-      break;
-    case PAYMENT_TYPE_MODE_DISCOUNT_PERCENT:
-      info.modeName = "discountPercent";
-      info.percent = paymentDataLo; // 0..100
-      break;
-    case PAYMENT_TYPE_MODE_SURCHARGE_PERCENT:
-      info.modeName = "surchargePercent";
-      info.percent = paymentDataLo; // 0..100
-      break;
-    default:
-      info.modeName = "unknown";
-      break;
-  }
-
-  return info;
-}
-
-/**
  * Identify if the first byte looks like a Wafer activity DeviceID.
  */
 function isKnownDeviceId(b0) {
@@ -236,388 +250,430 @@ function isKnownDeviceId(b0) {
 }
 
 /**
- * ---------------
+ * ----------------------------
  * Main class
- * ---------------
+ * ----------------------------
  */
-export default class MdbRs232Cashless extends EventEmitter {
+export class MdbRs232Cashless extends EventEmitter {
   /**
-   * @param {object} opts
-   * @param {string} opts.portPath - Serial port path (e.g. /dev/ttyS4, COM3)
-   * @param {number} opts.cashlessNumber - 1 => 0x10, 2 => 0x60
-   * @param {number} [opts.baudRate=9600] - RS-232 speed (bridge specific)
-   * @param {boolean} [opts.debug=false] - Emit debug:tx/debug:rx events
-   * @param {number} [opts.pollIntervalMs=250] - Poll interval for background poller
+   * @param {object} options
+   * @param {string} [options.portPath]                 Serial port path (e.g. "COM3", "/dev/ttyS1").
+   * @param {number} [options.cashlessNumber=1]         1 or 2 (maps to DeviceID 0x10 or 0x60).
+   * @param {object} [options.serial]                   Serial options override (baudRate, etc).
+   * @param {object} [options.transport]                Optional pre-created transport (Duplex-like).
+   * @param {number} [options.commandTimeoutMs=1200]    Default timeout for reply data.
+   * @param {number} [options.multiBlockTimeoutMs=4000] Timeout for multi-message collection.
+   * @param {boolean} [options.debug=false]             Emit verbose debug events.
    */
-  constructor(opts) {
+  constructor(options = {}) {
     super();
 
     const {
       portPath,
-      cashlessNumber,
-      baudRate = 9600,
+      cashlessNumber = 1,
+      serial = {},
+      transport,
+      commandTimeoutMs = 1200,
+      multiBlockTimeoutMs = 4000,
       debug = false,
-      pollIntervalMs = 250,
-    } = opts || {};
+    } = options;
 
-    if (!portPath) throw new ProtocolError("portPath required", { code: "NO_PORT" });
     if (cashlessNumber !== 1 && cashlessNumber !== 2) {
-      throw new ProtocolError("cashlessNumber must be 1 or 2", { code: "BAD_CASHLESS_NO", details: { cashlessNumber } });
+      throw new ProtocolError("cashlessNumber must be 1 or 2", {
+        code: "BAD_CASHLESS_NUMBER",
+        details: { cashlessNumber },
+      });
     }
 
-    this.portPath = portPath;
+    this.portPath = portPath ?? null;
     this.cashlessNumber = cashlessNumber;
-    this.deviceId = cashlessNumber === 1 ? DEVICE_ID_CASHLESS_1 : DEVICE_ID_CASHLESS_2;
-
-    this.baudRate = baudRate;
     this.debug = !!debug;
-    this.pollIntervalMs = pollIntervalMs;
 
-    this.port = null;
+    this.commandTimeoutMs = commandTimeoutMs;
+    this.multiBlockTimeoutMs = multiBlockTimeoutMs;
 
-    // inbound buffer
-    this._rxBuf = Buffer.alloc(0);
+    this._transport = transport ?? null;
 
-    // command queue / in-flight
-    this._queue = [];
-    this._inflight = null;
+    // Serial defaults per spec: 9600/8N1, no flow control.
+    this._serialOptions = {
+      baudRate: 9600,
+      dataBits: 8,
+      parity: "none",
+      stopBits: 1,
+      autoOpen: false,
+      ...serial,
+    };
 
-    // poller
-    this._pollTimer = null;
+    this.cashlessCmdOffset = cashlessNumber === 2 ? CASHLESS_2_CMD_OFFSET : 0x00;
+    this.cashlessDeviceId = (DEVICE_ID_CASHLESS_1 + this.cashlessCmdOffset) & 0xFF;
 
-    // state
-    this.readerConfig = null; // last received READER CONFIG (from Poll, code=0x01)
-    this.vmcConfig = null;
+    // RX line accumulation (raw bytes from serial stream).
+    this._rxAcc = Buffer.alloc(0);
 
-    // last expansion options used
-    this.expansionOptions = 0x00;
+    // Single in-flight command guard (bridge replies are not correlatable).
+    this._cmdChain = Promise.resolve();
+    this._pending = null;
+
+    // Cached reader config from SETUP/00.
+    this.readerConfig = null;
+
+    // Session state (best-effort; device can also push out-of-order errors).
+    this.session = {
+      active: false,
+      fundsScaled: null,
+      lastVendPriceScaled: null,
+      lastVendItem: null,
+    };
   }
 
   /**
-   * Build a "command byte" for a given MDB Cashless command, addressing configured cashless device number.
-   *
-   * For Wafer bridge we send raw MDB command bytes (already routed by bridge to correct MDB address).
-   * We still keep helper to avoid magic numbers in higher-level methods.
-   */
-  _cmd(cmd) {
-    return cmd & 0xFF;
-  }
-
-  /**
-   * ----------------------------
-   * Serial open/close
-   * ----------------------------
+   * Open serial port (or attach to provided transport).
    */
   async open() {
-    if (this.port?.isOpen) return;
+    if (this._transport) {
+      this._attachTransport(this._transport);
+      return;
+    }
+    if (!this.portPath) {
+      throw new ProtocolError("portPath is required when transport is not provided", {
+        code: "NO_PORT_PATH",
+      });
+    }
 
-    this.port = new SerialPort({
-      path: this.portPath,
-      baudRate: this.baudRate,
-      dataBits: 8,
-      stopBits: 1,
-      parity: "none",
-      autoOpen: false,
-    });
+    let SerialPortCtor;
+    try {
+      // Dynamic import to keep module usable without serialport dependency in unit tests.
+      const mod = await import("serialport");
+      SerialPortCtor = mod.SerialPort;
+    } catch (e) {
+      throw new ProtocolError(
+        "Package 'serialport' is required (npm i serialport) or provide options.transport",
+        { code: "NO_SERIALPORT", details: { cause: String(e) } }
+      );
+    }
+
+    const port = new SerialPortCtor({ path: this.portPath, ...this._serialOptions });
+    await new Promise((resolve, reject) => port.open((err) => (err ? reject(err) : resolve())));
+    this._transport = port;
+    this._attachTransport(port);
+  }
+
+  /**
+   * Close transport.
+   */
+  async close() {
+    if (!this._transport) return;
+
+    const t = this._transport;
+    t.off?.("data", this._onDataBound);
+    t.off?.("error", this._onErrorBound);
+
+    // If it's a SerialPort (has close(cb)), close it.
+    if (typeof t.close === "function") {
+      await new Promise((resolve) => t.close(() => resolve()));
+    }
+    this._transport = null;
+  }
+
+  /**
+   * Attach RX handlers to a transport.
+   */
+  _attachTransport(t) {
+    this._onDataBound = (chunk) => this._onData(chunk);
+    this._onErrorBound = (err) => this.emit("error", err);
+
+    t.on("data", this._onDataBound);
+    t.on("error", this._onErrorBound);
+  }
+
+  /**
+   * Low-level write (binary TX, no CR/LF).
+   */
+  async _writeBytes(buf) {
+    if (!this._transport) {
+      throw new ProtocolError("Transport not opened", { code: "NOT_OPEN" });
+    }
+    if (this.debug) {
+      this.emit("debug:tx", { hex: bufToHexSpaced(buf), bytes: Buffer.from(buf) });
+    }
 
     await new Promise((resolve, reject) => {
-      this.port.open((err) => (err ? reject(err) : resolve()));
+      this._transport.write(buf, (err) => (err ? reject(err) : resolve()));
     });
 
-    this.port.on("data", (d) => this._onData(d));
-    this.port.on("error", (e) => this.emit("error", e));
-
-    // start poller
-    this._startPoller();
-
-    // optional banner
-    this.emit("banner", `MDB-RS232 Cashless bridge opened on ${this.portPath} (cashless #${this.cashlessNumber}, devId=0x${this.deviceId.toString(16)})`);
-  }
-
-  async close() {
-    this._stopPoller();
-    if (!this.port) return;
-    const p = this.port;
-    this.port = null;
-
-    if (p.isOpen) {
-      await new Promise((resolve) => p.close(() => resolve()));
+    // Drain if supported (SerialPort has drain()).
+    if (typeof this._transport.drain === "function") {
+      await new Promise((resolve, reject) => {
+        this._transport.drain((err) => (err ? reject(err) : resolve()));
+      });
     }
   }
 
   /**
-   * ----------------------------
-   * RX/TX low-level
-   * ----------------------------
+   * Serial RX: accumulate until CRLF, then parse line.
    */
   _onData(chunk) {
-    if (!chunk || !chunk.length) return;
+    if (!Buffer.isBuffer(chunk)) chunk = Buffer.from(chunk);
+    this._rxAcc = Buffer.concat([this._rxAcc, chunk]);
 
-    this._rxBuf = Buffer.concat([this._rxBuf, Buffer.from(chunk)]);
-
-    // Parse as a stream of:
-    // - ACK (single byte 0x00)
-    // - Activity blocks starting with DeviceID and containing at least 2 bytes
-    //
-    // Wafer bridge is not length-prefixed here; in this project we rely on patterns:
-    // - ACK is always 0x00
-    // - Activity frame starts with known DeviceID and has at least code byte.
-    //
-    // We process conservatively:
-    while (this._rxBuf.length > 0) {
-      // ACK only
-      if (this._rxBuf[0] === 0x00) {
-        const b = this._rxBuf.slice(0, 1);
-        this._rxBuf = this._rxBuf.slice(1);
-        if (this.debug) this.emit("debug:rx", { hex: toHex(b), buf: b });
-        this._handleAck();
+    while (true) {
+      const crIndex = this._rxAcc.indexOf(RX_CR);
+      if (crIndex < 0) break;
+      if (crIndex + 1 >= this._rxAcc.length) break;
+      if (this._rxAcc[crIndex + 1] !== RX_LF) {
+        // Not a CRLF; drop up to CR to resync.
+        this._rxAcc = this._rxAcc.slice(crIndex + 1);
         continue;
       }
 
-      // If first byte looks like a DeviceID, we need at least 2 bytes: [DeviceID][code]
-      if (!isKnownDeviceId(this._rxBuf[0])) {
-        // unknown leading byte: drop it
-        const drop = this._rxBuf.slice(0, 1);
-        this._rxBuf = this._rxBuf.slice(1);
-        if (this.debug) this.emit("debug:rx", { hex: toHex(drop), buf: drop });
-        this.emit("warn", { code: "RX_GARBAGE", message: "Dropping unknown leading byte", byte: drop[0] });
-        continue;
-      }
+      const lineBuf = this._rxAcc.slice(0, crIndex);
+      this._rxAcc = this._rxAcc.slice(crIndex + 2);
 
-      if (this._rxBuf.length < 2) return; // wait for code byte
-
-      // We don't know length, but in this bridge/project the activity packet is delivered as one UART chunk most of time.
-      // We try to decode whatever is currently buffered as a single activity frame. If later bytes belong to another frame,
-      // the decoder should not break: we will treat extra bytes as next frames by re-looping.
-      //
-      // Heuristic: treat the whole current buffer as one activity frame, then clear it.
-      const frame = this._rxBuf;
-      this._rxBuf = Buffer.alloc(0);
-
-      if (this.debug) this.emit("debug:rx", { hex: toHex(frame), buf: frame });
-
-      this._handleActivityFrame(frame);
-      continue;
+      const line = lineBuf.toString("ascii");
+      this._handleRxLine(line);
     }
-  }
-
-  _write(buf) {
-    if (!this.port?.isOpen) throw new ProtocolError("Port not open", { code: "PORT_CLOSED" });
-    const b = Buffer.from(buf);
-    if (this.debug) this.emit("debug:tx", { hex: toHex(b), buf: b });
-    return new Promise((resolve, reject) => {
-      this.port.write(b, (err) => (err ? reject(err) : resolve()));
-    });
   }
 
   /**
-   * ----------------------------
-   * Command queueing
-   * ----------------------------
+   * Handle one RX line (ASCII text).
    */
-  async _enqueue(fn) {
-    return await new Promise((resolve, reject) => {
-      this._queue.push({ fn, resolve, reject });
-      this._drainQueue();
-    });
-  }
+  _handleRxLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed) return;
 
-  async _drainQueue() {
-    if (this._inflight) return;
-    const job = this._queue.shift();
-    if (!job) return;
-
-    this._inflight = job;
-
+    // Try parse ASCII-HEX. If fails, treat as banner/plain text.
+    let bytes = null;
     try {
-      const res = await job.fn();
-      this._inflight = null;
-      job.resolve(res);
-      this._drainQueue();
+      bytes = parseAsciiHexLineToBytes(trimmed);
     } catch (e) {
-      this._inflight = null;
-      job.reject(e);
-      this._drainQueue();
-    }
-  }
-
-  _handleAck() {
-    // ACK resolves the currently waiting command if it expects ACK
-    const inflight = this._inflight?.waiter;
-    if (inflight && inflight.expect === "ACK") {
-      inflight.resolve({ type: "ack" });
-      this._inflight.waiter = null;
-    } else {
-      // some commands are ACK_OR_SILENCE etc; still mark as seen
-      if (inflight && inflight.expect === "ACK_OR_SILENCE") {
-        inflight.resolve({ type: "ack" });
-        this._inflight.waiter = null;
-      }
-    }
-  }
-
-  _handleActivityFrame(frame) {
-    // [DeviceId][code][payload...]
-    if (frame.length < 2) return;
-    const devId = frame[0];
-    const code = frame[1];
-    const payload = frame.slice(1); // include code in payload to reuse decoders expecting [code]...
-    // Only handle frames for our cashless device (some bridges may emit multiple device frames)
-    if (devId !== this.deviceId) {
-      this.emit("activity:other", { deviceId: devId, code, raw: frame });
+      this.emit("banner", trimmed);
+      if (this.debug) this.emit("debug:rx:banner", { text: trimmed });
       return;
     }
 
-    const ev = this._decodeCashlessActivity(payload);
-    if (!ev) return;
+    if (!bytes) return;
 
-    this.emit(ev.type, ev);
-    this.emit("activity:cashless", ev);
+    if (this.debug) {
+      this.emit("debug:rx", { hex: bufToHexSpaced(bytes), bytes: Buffer.from(bytes) });
+    }
+    this.emit("raw", bytes);
+
+    this._dispatchRx(bytes);
   }
 
   /**
-   * ----------------------------
-   * Waiters / send helpers
-   * ----------------------------
+   * Dispatch parsed RX bytes into:
+   *  - pending command reply collector, OR
+   *  - activity event (DeviceID-prefixed), OR
+   *  - unclassified reply bytes
    */
-  _sendAndWait(cmdBuf, { expect = "ACK", timeoutMs = 1000 } = {}) {
-    return new Promise(async (resolve, reject) => {
-      if (!this._inflight) {
-        reject(new ProtocolError("No inflight job for sendAndWait", { code: "INTERNAL" }));
-        return;
-      }
+  _dispatchRx(bytes) {
+    // 1) If activity (DeviceID-prefixed) -> parse and emit.
+    if (isKnownDeviceId(bytes[0])) {
+      this._handleDeviceActivity(bytes);
+      return;
+    }
 
-      const waiter = {
-        expect,
-        resolve: (v) => resolve(v),
-        reject: (e) => reject(e),
-        cancel: () => reject(new ProtocolError("Timeout waiting for reply", { code: "TIMEOUT", details: { expect } })),
-      };
+    // 2) Not activity -> could be reply data for an in-flight command.
+    if (this._pending && this._pending.acceptReply(bytes)) {
+      return;
+    }
 
-      this._inflight.waiter = waiter;
-
-      // transmit
-      await this._write(cmdBuf);
-
-      // timer
-      const t = setTimeout(() => {
-        if (this._inflight?.waiter === waiter) {
-          this._inflight.waiter = null;
-          waiter.cancel();
-        }
-      }, timeoutMs);
-
-      // wrap resolve/reject to clear timer
-      const origResolve = waiter.resolve;
-      const origReject = waiter.reject;
-      waiter.resolve = (v) => {
-        clearTimeout(t);
-        origResolve(v);
-      };
-      waiter.reject = (e) => {
-        clearTimeout(t);
-        origReject(e);
-      };
-    });
+    // 3) Otherwise emit as orphan reply.
+    this.emit("reply:orphan", bytes);
   }
 
   /**
-   * ----------------------------
-   * Poller
-   * ----------------------------
+   * Handle activity from any MDB device (we only parse cashless; others are forwarded as generic).
    */
-  _startPoller() {
-    if (this._pollTimer) return;
-    this._pollTimer = setInterval(() => {
-      // best-effort, do not queue if port closed
-      if (!this.port?.isOpen) return;
-      // send poll unqueued to avoid starving; it will still receive ACK/activities
-      this._write(Buffer.from([this._cmd(MDB_CASHLESS_CMD_POLL)])).catch(() => {});
-    }, this.pollIntervalMs);
-  }
+  _handleDeviceActivity(bytes) {
+    const deviceId = bytes[0];
 
-  _stopPoller() {
-    if (this._pollTimer) {
-      clearInterval(this._pollTimer);
-      this._pollTimer = null;
+    // Forward non-cashless activity without deep parsing.
+    if (deviceId !== this.cashlessDeviceId) {
+      this.emit("activity:other", { deviceId, bytes });
+      return;
+    }
+
+    // Cashless activity: [DeviceID][code][payload...]
+    const code = bytes[1] ?? null;
+    const payload = bytes.slice(1); // keep [code][payload...] for parsing convenience
+
+    const parsed = this._parseCashlessActivity(payload);
+    this.emit("activity:cashless", parsed);
+
+    // If pending collector expects this (e.g., Peripheral ID may arrive as activity), allow it.
+    if (this._pending && this._pending.acceptActivity(parsed, bytes)) {
+      return;
     }
   }
 
   /**
-   * ----------------------------
-   * Activity decoding
-   * ----------------------------
+   * Parse cashless poll/activity payload (without DeviceID).
+   * payload[0] = poll code.
    */
-  _decodeCashlessActivity(payload) {
-    if (!payload || payload.length < 1) return null;
-
+  _parseCashlessActivity(payload) {
     const code = payload[0];
 
     switch (code) {
-      case 0x01:
-        return this._decodeReaderConfig(payload);
-      case 0x03:
-        return this._decodeBeginSession(payload);
-      case 0x04:
-        return { type: "sessionCancelRequest", code, raw: Buffer.from(payload) };
-      case 0x05:
-        return this._decodeVendApproved(payload);
-      case 0x06:
-        return { type: "vendDenied", code, raw: Buffer.from(payload) };
-      case 0x07:
-        return { type: "endSession", code, raw: Buffer.from(payload) };
-      case 0x00:
-        return { type: "cancelled", code, raw: Buffer.from(payload) };
-      case 0x09:
-        return this._decodePeripheralId(payload);
-      default:
-        return { type: "unknownActivity", code, raw: Buffer.from(payload) };
+      case POLL_JUST_RESET: {
+        // Expected: 00 00 (two bytes) after code, but some bridges may send only 00 00 total in docs.
+        const isJustReset = payload.length >= 3 && payload[1] === 0x00 && payload[2] === 0x00;
+        const ev = { type: "justReset", code, isJustReset, raw: Buffer.from(payload) };
+        this.emit("justReset", ev);
+        return ev;
+      }
+
+      case POLL_READER_CONFIG_DATA: {
+        // Payload identical to Reader Config Data but without CHK:
+        // [01][Z2..Z8]
+        const cfg = this._decodeReaderConfigDataNoChk(payload);
+        const ev = { type: "readerConfig", code, config: cfg, raw: Buffer.from(payload) };
+        this.readerConfig = cfg;
+        this.emit("readerConfig", ev);
+        return ev;
+      }
+
+      case POLL_DISPLAY_REQUEST: {
+        const displayTimeTenthSec = payload[1] ?? 0;
+        const textBytes = payload.slice(2);
+        const text = textBytes.toString("ascii");
+        const ev = { type: "displayRequest", code, displayTimeTenthSec, text, raw: Buffer.from(payload) };
+        this.emit("displayRequest", ev);
+        return ev;
+      }
+
+      case POLL_BEGIN_SESSION: {
+        const ev = this._decodeBeginSession(payload);
+        this.session.active = true;
+        this.session.fundsScaled = ev.fundsScaled ?? null;
+        this.emit("beginSession", ev);
+        return ev;
+      }
+
+      case POLL_SESSION_CANCEL_REQUEST: {
+        const ev = { type: "sessionCancelRequest", code, raw: Buffer.from(payload) };
+        this.emit("sessionCancelRequest", ev);
+        return ev;
+      }
+
+      case POLL_VEND_APPROVED: {
+        const ev = this._decodeVendApproved(payload);
+        this.emit("vendApproved", ev);
+        return ev;
+      }
+
+      case POLL_VEND_DENIED: {
+        const ev = { type: "vendDenied", code, raw: Buffer.from(payload) };
+        this.emit("vendDenied", ev);
+        return ev;
+      }
+
+      case POLL_END_SESSION: {
+        this.session.active = false;
+        const ev = { type: "endSession", code, raw: Buffer.from(payload) };
+        this.emit("endSession", ev);
+        return ev;
+      }
+
+      case POLL_CANCELLED: {
+        const ev = { type: "cancelled", code, raw: Buffer.from(payload) };
+        this.emit("cancelled", ev);
+        return ev;
+      }
+
+      case POLL_PERIPHERAL_ID: {
+        const ev = this._decodePeripheralId(payload);
+        this.emit("peripheralId", ev);
+        return ev;
+      }
+
+      case POLL_MALFUNCTION: {
+        const ee = payload[1] ?? 0;
+        const ss = payload[2] ?? 0;
+        const errorType = (ee >> 3) & 0x1F; // top 5 bits
+        const subcode = ((ee & 0x07) << 8) | ss;
+
+        const ev = {
+          type: "malfunction",
+          code,
+          errorType,
+          subcode,
+          raw: Buffer.from(payload),
+        };
+        this.emit("malfunction", ev);
+        return ev;
+      }
+
+      case POLL_CMD_OUT_OF_SEQUENCE: {
+        const badCmd = payload[1] ?? 0;
+        const ev = { type: "commandOutOfSequence", code, badCmd, raw: Buffer.from(payload) };
+        this.emit("commandOutOfSequence", ev);
+        return ev;
+      }
+
+      case POLL_REVALUE_APPROVED: {
+        const amountScaled = payload.length >= 3 ? u16be(payload[1], payload[2]) : null;
+        const ev = { type: "revalueApproved", code, amountScaled, raw: Buffer.from(payload) };
+        this.emit("revalueApproved", ev);
+        return ev;
+      }
+
+      case POLL_REVALUE_DENIED: {
+        const ev = { type: "revalueDenied", code, raw: Buffer.from(payload) };
+        this.emit("revalueDenied", ev);
+        return ev;
+      }
+
+      case POLL_REVALUE_LIMIT_AMOUNT: {
+        const limitScaled = payload.length >= 3 ? u16be(payload[1], payload[2]) : null;
+        const ev = { type: "revalueLimitAmount", code, limitScaled, raw: Buffer.from(payload) };
+        this.emit("revalueLimitAmount", ev);
+        return ev;
+      }
+
+      default: {
+        const ev = { type: "unknown", code, raw: Buffer.from(payload) };
+        this.emit("unknownActivity", ev);
+        return ev;
+      }
     }
   }
 
-  _decodeReaderConfig(payload) {
-    // payload: [01][FeatureLevel][CountryHi][CountryLo][ScaleFactor][DecimalPlaces][MaxTime][MiscOptions]
-    const raw = Buffer.from(payload);
-    if (payload.length < 8) return { type: "readerConfig", code: payload[0], raw, incomplete: true };
-
-    const code = payload[0];
-    const readerFeatureLevel = payload[1];
+  _decodeReaderConfigDataNoChk(payload) {
+    // payload: [01][Z2][Z3][Z4][Z5][Z6][Z7][Z8]
+    if (payload.length < 8 || payload[0] !== POLL_READER_CONFIG_DATA) {
+      throw new ProtocolError("Bad Reader Config Data activity", { code: "BAD_READER_CONFIG_ACTIVITY" });
+    }
+    const z2 = payload[1];
     const countryCode = u16be(payload[2], payload[3]);
     const scalingFactor = payload[4];
-    const decimalPlaces = payload[5];
+    const decimalPlaces = payload[5] & 0x0F;
     const maxResponseTimeSec = payload[6];
     const miscOptions = payload[7];
 
-    const misc = {
-      canRefund: (miscOptions & 0x01) !== 0,
-      multivendCapable: (miscOptions & 0x02) !== 0,
-      hasOwnDisplay: (miscOptions & 0x04) !== 0,
-      supportsCashSale: (miscOptions & 0x08) !== 0,
-    };
-
-    const config = {
-      readerFeatureLevel,
+    return {
+      readerFeatureLevel: z2,
       countryCode,
       scalingFactor,
       decimalPlaces,
       maxResponseTimeSec,
       miscOptions,
-      misc,
+      misc: {
+        canRefund: !!(miscOptions & 0x01),
+        multivendCapable: !!(miscOptions & 0x02),
+        hasOwnDisplay: !!(miscOptions & 0x04),
+        supportsCashSale: !!(miscOptions & 0x08),
+      },
     };
-
-    // store for scaling helpers
-    this.readerConfig = config;
-
-    return { type: "readerConfig", code, config, raw };
   }
 
   _decodeBeginSession(payload) {
     // payload: [03][...]
-    // Variants (MDB 4.2, cashless Begin Session):
-    //  - Level 1 minimal:              03 funds16
-    //  - Some bridges short form:      03 funds16 paymentType paymentData8
-    //  - Level 2 common:               03 funds16 mediaId32 paymentType paymentData16   (10 bytes total)
-    //  - Expanded (Level 3 options):   03 funds32 currency16 language16 paymentType paymentData(8/16) ...
+    // Variants (per spec):
+    //  - 16-bit funds:            03 FF FF
+    //  - 16-bit + PT PD:          03 FF FF PT PD
+    //  - Expanded (32-bit etc):   03 FFFF FFFF CC CC LL LL PT PD
     const code = payload[0];
     const raw = Buffer.from(payload);
 
@@ -626,81 +682,28 @@ export default class MdbRs232Cashless extends EventEmitter {
       return { type: "beginSession", code, mode: "funds16", fundsScaled, raw };
     }
 
-    // Short/legacy: funds16 + paymentType + 1-byte paymentData (bridge-specific)
     if (payload.length === 5) {
       const fundsScaled = u16be(payload[1], payload[2]);
       const paymentType = payload[3];
-      const paymentDataHi = 0x00;
-      const paymentDataLo = payload[4];
-      const paymentData16 = ((paymentDataHi << 8) | paymentDataLo) & 0xFFFF;
-      const paymentTypeInfo = decodePaymentType(paymentType, paymentDataHi, paymentDataLo);
-      return {
-        type: "beginSession",
-        code,
-        mode: "funds16+type+data8",
-        fundsScaled,
-        paymentType,
-        paymentTypeInfo,
-        paymentDataHi,
-        paymentDataLo,
-        paymentData16,
-        raw,
-      };
+      const paymentData = payload[4];
+      return { type: "beginSession", code, mode: "funds16+meta", fundsScaled, paymentType, paymentData, raw };
     }
 
-    // Level 2 common: funds16 + mediaId32 + paymentType + paymentData16
-    if (payload.length === 10) {
-      const fundsScaled = u16be(payload[1], payload[2]);
-      const paymentMediaId = decodeU32BE(payload[3], payload[4], payload[5], payload[6]) >>> 0;
-      const paymentType = payload[7];
-      const paymentDataHi = payload[8];
-      const paymentDataLo = payload[9];
-      const paymentData16 = ((paymentDataHi << 8) | paymentDataLo) & 0xFFFF;
-      const paymentTypeInfo = decodePaymentType(paymentType, paymentDataHi, paymentDataLo);
-      return {
-        type: "beginSession",
-        code,
-        mode: "funds16+mediaId32+type+data16",
-        fundsScaled,
-        paymentMediaId,
-        paymentType,
-        paymentTypeInfo,
-        paymentDataHi,
-        paymentDataLo,
-        paymentData16,
-        raw,
-      };
-    }
-
-    // Expanded: funds32 + currency16 + language16 + paymentType + paymentData (8/16)
     if (payload.length >= 11) {
-      const fundsScaled32 = decodeU32BE(payload[1], payload[2], payload[3], payload[4]) >>> 0;
+      const fundsScaled32 = decodeU32BE(payload[1], payload[2], payload[3], payload[4]);
       const currencyCode = u16be(payload[5], payload[6]);
       const languageCode = u16be(payload[7], payload[8]);
       const paymentType = payload[9];
-
-      // Some bridges provide only 1 byte of paymentData; MDB Level 2/3 normally uses 2 bytes (Z9..Z10).
-      let paymentDataHi = 0x00;
-      let paymentDataLo = payload[10];
-      if (payload.length >= 12) {
-        paymentDataHi = payload[10];
-        paymentDataLo = payload[11];
-      }
-      const paymentData16 = ((paymentDataHi << 8) | paymentDataLo) & 0xFFFF;
-      const paymentTypeInfo = decodePaymentType(paymentType, paymentDataHi, paymentDataLo);
-
+      const paymentData = payload[10];
       return {
         type: "beginSession",
         code,
-        mode: "funds32+currency+lang+type+data",
+        mode: "funds32+currency+lang+meta",
         fundsScaled: fundsScaled32,
         currencyCode,
         languageCode,
         paymentType,
-        paymentTypeInfo,
-        paymentDataHi,
-        paymentDataLo,
-        paymentData16,
+        paymentData,
         raw,
       };
     }
@@ -710,7 +713,7 @@ export default class MdbRs232Cashless extends EventEmitter {
   }
 
   _decodeVendApproved(payload) {
-    // payload: [05][amountHi][amountLo]  OR [05][amount32][token?]
+    // payload: [05][AA AA] or [05][AA AA AA AA]
     const code = payload[0];
     const raw = Buffer.from(payload);
 
@@ -720,8 +723,8 @@ export default class MdbRs232Cashless extends EventEmitter {
     }
 
     if (payload.length >= 5) {
-      const amountScaled = decodeU32BE(payload[1], payload[2], payload[3], payload[4]) >>> 0;
-      const isToken = payload.length >= 6 ? (payload[5] !== 0x00) : false;
+      const amountScaled = decodeU32BE(payload[1], payload[2], payload[3], payload[4]);
+      const isToken = amountScaled === 0xFFFFFFFF;
       return { type: "vendApproved", code, mode: "amount32", amountScaled, isToken, raw };
     }
 
@@ -736,129 +739,431 @@ export default class MdbRs232Cashless extends EventEmitter {
     // We accept both and mark incomplete if not enough bytes.
 
     const raw = Buffer.from(payload);
-    const has09 = raw.length >= 1 && raw[0] === 0x09;
+    const has09 = raw.length >= 1 && raw[0] === POLL_PERIPHERAL_ID;
     const off = has09 ? 1 : 0;
 
-    if (raw.length < off + 3 + 12 + 12 + 2) {
-      return { type: "peripheralId", code: 0x09, raw, incomplete: true };
+    const BASE_LEN = off + 29; // mfg(3)+serial(12)+model(12)+ver(2)
+    const OPT_LEN  = off + 33; // base + optbits(4)
+
+    if (raw.length < BASE_LEN) {
+      return { type: "peripheralId", code: POLL_PERIPHERAL_ID, incomplete: true, raw };
     }
 
-    const manufacturer = raw.slice(off + 0, off + 3).toString("ascii");
+    const mfg = raw.slice(off + 0,  off + 3).toString("ascii");
     const serial = raw.slice(off + 3, off + 15).toString("ascii").trim();
     const model = raw.slice(off + 15, off + 27).toString("ascii").trim();
-    const version = raw.slice(off + 27, off + 29).toString("ascii");
 
-    let options = null;
-    if (raw.length >= off + 33) {
-      options = raw.slice(off + 29, off + 33);
+    const verBcd0 = raw[off + 27];
+    const verBcd1 = raw[off + 28];
+
+    const swVersion = {
+      raw: [verBcd0, verBcd1],
+      text: `${(verBcd0 >> 4) & 0x0F}${verBcd0 & 0x0F}.${(verBcd1 >> 4) & 0x0F}${verBcd1 & 0x0F}`,
+    };
+
+    let optionalFeatureBits = null;
+    if (raw.length >= OPT_LEN) {
+      optionalFeatureBits = decodeU32BE(raw[off + 29], raw[off + 30], raw[off + 31], raw[off + 32]) >>> 0;
     }
 
     return {
       type: "peripheralId",
-      code: 0x09,
-      manufacturer,
+      code: POLL_PERIPHERAL_ID,
+      manufacturer: mfg,
       serial,
       model,
-      version,
-      options,
+      swVersion,
+      optionalFeatureBits,
       raw,
     };
   }
 
   /**
    * ----------------------------
-   * High-level commands
+   * Command sending (single in-flight)
    * ----------------------------
    */
 
   /**
-   * Reset bridge/MDB cashless device state (best effort).
+   * Serialize commands: only one pending reply context at a time.
    */
-  async reset() {
-    return await this._enqueue(async () => {
-      // In Wafer bridge, POLL (0x10) serves as a "nudge", but reset here is implemented as a single poll + wait for ACK.
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_POLL)]);
-      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs: 800 });
+  async _enqueue(fn) {
+    const prev = this._cmdChain;
+    let release;
+    this._cmdChain = new Promise((r) => (release = r));
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Build cashless command byte for cashless#1 base.
+   */
+  _cmd(baseCashless1) {
+    return (baseCashless1 + this.cashlessCmdOffset) & 0xFF;
+  }
+
+  /**
+   * Send command and wait for reply (or handle multi-message).
+   *
+   * @param {Buffer} txBytes
+   * @param {object} opts
+   * @param {"ACK"|"ACK_OR_SILENCE"|"READER_CONFIG"|"MULTI_PERIPHERAL_ID"|"NONE"} opts.expect
+   * @param {number} [opts.timeoutMs]
+   * @returns {Promise<any>}
+   */
+  async _sendAndWait(txBytes, opts) {
+    const { expect, timeoutMs } = opts;
+    const tmo = timeoutMs ?? this.commandTimeoutMs;
+
+    if (this._pending) {
+      throw new ProtocolError("Command already pending", { code: "INTERNAL_PENDING" });
+    }
+
+    return await new Promise(async (resolve, reject) => {
+      const deadline = Date.now() + tmo;
+
+      const pending = {
+        expect,
+        buffer: Buffer.alloc(0),
+        started: Date.now(),
+        acceptReply: (rx) => {
+          try {
+            if (expect === "NONE") return false;
+
+            if (expect === "ACK") {
+              if (rx.length === 1 && (rx[0] === BRIDGE_REPLY_ACK || rx[0] === BRIDGE_REPLY_NAK)) {
+                this._pending = null;
+                if (rx[0] === BRIDGE_REPLY_ACK) return resolve({ ack: true, rx });
+                return reject(new ProtocolError("Bridge NAK", { code: "BRIDGE_NAK", details: { rx } }));
+              }
+              return false;
+            }
+
+            if (expect === "ACK_OR_SILENCE") {
+              if (rx.length === 1 && (rx[0] === BRIDGE_REPLY_ACK || rx[0] === BRIDGE_REPLY_NAK)) {
+                this._pending = null;
+                if (rx[0] === BRIDGE_REPLY_ACK) return resolve({ ack: true, rx });
+                return reject(new ProtocolError("Bridge NAK", { code: "BRIDGE_NAK", details: { rx } }));
+              }
+              // other replies are ignored here
+              return false;
+            }
+
+            if (expect === "READER_CONFIG") {
+              // Некоторые мосты/ридеры отвечают на SETUP/00 сначала single-byte ACK (00),
+              // а сам Reader Config Data присылают как activity (DeviceID 10/60 + 01 ... без CHK).
+              // Поэтому:
+              //  - 00: считаем "принял команду", но НЕ завершаем ожидание
+              //  - FF: NAK -> ошибка
+              //  - 01 ...: полноценный reply (обычно с CHK) -> завершаем ожидание
+
+              if (rx.length === 1) {
+                if (rx[0] === BRIDGE_REPLY_NAK) {
+                  this._pending = null;
+                  return reject(new ProtocolError("Bridge NAK", { code: "BRIDGE_NAK", details: { rx } }));
+                }
+                if (rx[0] === BRIDGE_REPLY_ACK) {
+                  // consume ACK and keep waiting for config
+                  return true;
+                }
+              }
+
+              // Reply to SETUP/00: 01 Z2..Z8 CHK (или без CHK на некоторых реализациях)
+              if (rx.length >= 2 && rx[0] === 0x01) {
+                // Validate CHK if present
+                if (rx.length >= 9) {
+                  const chk = rx[rx.length - 1];
+                  const calc = mdbChk8(rx.slice(0, rx.length - 1));
+                  if (chk !== calc) {
+                    this.emit("warn", {
+                      type: "chkMismatch",
+                      where: "READER_CONFIG_REPLY",
+                      expected: calc,
+                      got: chk,
+                      rx,
+                    });
+                  }
+                }
+
+                const cfg = this._decodeReaderConfigReply(rx);
+                this.readerConfig = cfg;
+
+                this._pending = null;
+                return resolve(cfg);
+              }
+
+              return false;
+            }
+
+            if (expect === "MULTI_PERIPHERAL_ID") {
+              // Ignore single-byte ACK/NAK noise; actual ID is multi-byte ASCII fields.
+              if (rx.length === 1) {
+                if (rx[0] === BRIDGE_REPLY_NAK) {
+                  this._pending = null;
+                  return reject(new ProtocolError("Bridge NAK", { code: "BRIDGE_NAK", details: { rx } }));
+                }
+                if (rx[0] === BRIDGE_REPLY_ACK) {
+                  // just consume; kick loop will request blocks anyway
+                  return true;
+                }
+              }
+
+              // Append data chunk. Some bridges may repeat 0x09 at the start of each chunk; de-duplicate.
+              let chunk = rx;
+              if (pending.buffer.length > 0 && chunk.length > 0 && chunk[0] === POLL_PERIPHERAL_ID) {
+                chunk = chunk.slice(1);
+              }
+              pending.buffer = Buffer.concat([pending.buffer, chunk]);
+
+              // Try decode as soon as we have enough (29 bytes w/o 09, or 30 bytes with 09)
+              const buf = pending.buffer;
+              const has09 = buf.length >= 1 && buf[0] === POLL_PERIPHERAL_ID;
+              const minLen = has09 ? 30 : 29;
+
+              if (buf.length >= minLen) {
+                const decoded = this._decodePeripheralId(buf);
+                if (!decoded.incomplete) {
+                  this._pending = null;
+                  return resolve(decoded);
+                }
+              }
+
+              // If not enough bytes yet, ask for the next block (one-shot).
+              // (Do not await: keep parsing path fast.)
+              if (pending.buffer.length < 29) {
+                this._writeBytes(Buffer.from([BRIDGE_BLOCK_ACK])).catch((e) => {
+                  this.emit("warn", { type: "multiAckWriteFailed", error: String(e) });
+                });
+              }
+
+              return true;
+            }
+
+            return false;
+          } catch (e) {
+            this._pending = null;
+            return reject(e);
+          }
+        },
+        
+        acceptActivity: (parsed, fullBytes) => {
+          // 1) SETUP/00 может завершиться по activity Reader Config Data:
+          //    [DeviceID] 01 Z2..Z8  (без CHK)
+          if (expect === "READER_CONFIG") {
+            if (parsed && parsed.type === "readerConfig") {
+              // parsed.config не содержит chk/chkOk (activity без CHK) — это нормально.
+              const cfg = {
+                ...parsed.config,
+                chk: null,
+                chkOk: null,
+                raw: parsed.raw,
+                source: "activity",
+              };
+              this.readerConfig = cfg;
+              this._pending = null;
+              return resolve(cfg);
+            }
+            return false;
+          }
+
+          // 2) Peripheral ID может прийти как activity:
+          if (expect === "MULTI_PERIPHERAL_ID") {
+            if (!parsed || parsed.type !== "peripheralId") return false;
+            const rx = parsed.raw; // payload (09 + fields)
+            return pending.acceptReply(rx);
+          }
+
+          return false;
+        },
+
+        cancel: () => {
+          this._pending = null;
+          reject(new ProtocolError("Timeout waiting for reply", { code: "TIMEOUT", details: { expect } }));
+        },
+      };
+
+      this._pending = pending;
+
+      // Write command.
+      try {
+        await this._writeBytes(txBytes);
+
+        // Kick loop for multi-message devices (Wafer):
+        // Some firmwares start sending blocks only after repeated 0x00 block-acks.
+        // We keep sending 0x00 periodically while MULTI_PERIPHERAL_ID is pending.
+        if (expect === "MULTI_PERIPHERAL_ID") {
+          (async () => {
+            await delay(MULTI_FIRST_BLOCK_KICK_START_DELAY_MS);
+
+            let kicks = 0;
+
+            // Kick only until we receive the first bytes (pending.buffer becomes non-empty),
+            // and only up to MULTI_FIRST_BLOCK_KICK_MAX times to avoid log spam.
+            while (this._pending === pending && pending.buffer.length === 0 && kicks < MULTI_FIRST_BLOCK_KICK_MAX) {
+              await this._writeBytes(Buffer.from([BRIDGE_BLOCK_ACK]));
+              kicks++;
+              await delay(MULTI_FIRST_BLOCK_KICK_INTERVAL_MS);
+            }
+
+            // Optional: warn if we kicked but still got nothing (device likely doesn't support Request ID).
+            if (this._pending === pending && pending.buffer.length === 0 && kicks >= MULTI_FIRST_BLOCK_KICK_MAX) {
+              this.emit("warn", { type: "multiKickLimitReached", kicks });
+            }
+          })().catch((e) => {
+            this.emit("warn", { type: "multiKickLoopFailed", error: String(e) });
+          });
+        }
+      } catch (e) {
+        this._pending = null;
+        return reject(e);
+      }
+
+      // Timeout watchdog.
+      const tick = async () => {
+        while (this._pending === pending) {
+          if (Date.now() > deadline) {
+            // For ACK_OR_SILENCE: treat timeout as success with ack=false.
+            if (expect === "ACK_OR_SILENCE") {
+              this._pending = null;
+              return resolve({ ack: false, rx: null });
+            }
+            pending.cancel();
+            return;
+          }
+          await delay(10);
+        }
+      };
+      tick().catch(() => {});
     });
   }
 
   /**
-   * Setup VMC configuration for cashless reader.
-   *
-   * @param {object} p
-   * @param {number} p.vmcFeatureLevel - VMC cashless feature level (usually 3)
-   * @param {number} p.columns - vending columns (optional, may be 0)
-   * @param {number} p.rows - vending rows (optional, may be 0)
-   * @param {"unused"|"fullAscii"} p.displayType - display configuration hint
-   * @param {number} [p.timeoutMs=800]
+   * Decode SETUP/00 reply: 01 Z2 Z3 Z4 Z5 Z6 Z7 Z8 CHK
    */
-  async setupConfig(p) {
+  _decodeReaderConfigReply(rx) {
+    if (rx[0] !== 0x01) throw new ProtocolError("Bad reader config reply header", { code: "BAD_CFG_HDR" });
+    if (rx.length < 9) {
+      // Short reply (should not happen for standard readers); return partial.
+      return { partial: true, raw: rx };
+    }
+
+    const readerFeatureLevel = rx[1];
+    const countryCode = u16be(rx[2], rx[3]);
+    const scalingFactor = rx[4];
+    const decimalPlaces = rx[5] & 0x0F;
+    const maxResponseTimeSec = rx[6];
+    const miscOptions = rx[7];
+    const chk = rx[8];
+    const calc = mdbChk8(rx.slice(0, 8));
+
+    return {
+      readerFeatureLevel,
+      countryCode,
+      scalingFactor,
+      decimalPlaces,
+      maxResponseTimeSec,
+      miscOptions,
+      chk,
+      chkOk: chk === calc,
+      misc: {
+        canRefund: !!(miscOptions & 0x01),
+        multivendCapable: !!(miscOptions & 0x02),
+        hasOwnDisplay: !!(miscOptions & 0x04),
+        supportsCashSale: !!(miscOptions & 0x08),
+      },
+      raw: rx,
+    };
+  }
+
+  /**
+   * ----------------------------
+   * Public API (commands)
+   * ----------------------------
+   */
+
+  /**
+   * RESET (10/60)
+   * Reply: 00 ACK / FF NAK
+   */
+  async reset() {
+    return await this._enqueue(async () => {
+      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_RESET)]);
+      return await this._sendAndWait(cmd, { expect: "ACK" });
+    });
+  }
+
+  /**
+   * SETUP/00 Config Data (11 00 Y2 Y3 Y4 Y5) WITHOUT CHK.
+   * Reply: Reader Config Data (01 ... CHK)
+   *
+   * @param {object} cfg
+   * @param {number} [cfg.vmcFeatureLevel=3]   1..3
+   * @param {number} [cfg.columns=0]          0..255
+   * @param {number} [cfg.rows=0]             0..255
+   * @param {"unused"|"numbers+upper"|"fullAscii"} [cfg.displayType="fullAscii"]
+   */
+  async setupConfig(cfg = {}) {
     return await this._enqueue(async () => {
       const {
         vmcFeatureLevel = 3,
         columns = 0,
         rows = 0,
-        displayType = "unused",
-        timeoutMs = 800,
-      } = p || {};
+        displayType = "fullAscii",
+      } = cfg;
 
-      // For this bridge, Setup/Config is encoded as:
-      // [11][00][vmcFeatureLevel][columns][rows][displayType]
-      // displayType mapping:
-      //  - "unused" => 0x00
-      //  - "fullAscii" => 0x02 (practical for Nayax)
-      const displayTypeCode = (displayType === "fullAscii") ? 0x02 : 0x00;
+      if (![1, 2, 3].includes(vmcFeatureLevel)) {
+        throw new ProtocolError("VMC feature level must be 1..3", {
+          code: "BAD_FEATURE_LEVEL",
+          details: { vmcFeatureLevel },
+        });
+      }
+      if (!Number.isInteger(columns) || columns < 0 || columns > 0xFF) {
+        throw new ProtocolError("columns out of range", { code: "BAD_COLUMNS", details: { columns } });
+      }
+      if (!Number.isInteger(rows) || rows < 0 || rows > 0xFF) {
+        throw new ProtocolError("rows out of range", { code: "BAD_ROWS", details: { rows } });
+      }
+
+      // Y5 Display Information: upper 5 bits unused (0), lower 3 bits type:
+      //  000 unused
+      //  001 numbers+upper+blank+decimal point
+      //  010 full ASCII
+      const yyy =
+        displayType === "unused" ? 0b000 :
+        displayType === "numbers+upper" ? 0b001 :
+        displayType === "fullAscii" ? 0b010 :
+        (() => { throw new ProtocolError("Unknown displayType", { code: "BAD_DISPLAY_TYPE", details: { displayType } }); })();
+
+      const y5 = yyy & 0x07;
 
       const cmd = Buffer.from([
         this._cmd(MDB_CASHLESS_CMD_SETUP),
-        MDB_SETUP_SUBCMD_CONFIG,
+        MDB_SETUP_SUBCMD_CONFIG_DATA,
         vmcFeatureLevel & 0xFF,
         columns & 0xFF,
         rows & 0xFF,
-        displayTypeCode,
+        y5,
       ]);
 
-      // ACK is expected; readerConfig will arrive asynchronously on Poll as activity 0x01.
-      await this._sendAndWait(cmd, { expect: "ACK", timeoutMs });
-
-      // Wait for readerConfig activity to populate scaling factors etc.
-      // NOTE: Some bridges/readers may send config only on next Poll; so allow a longer wait.
-      const ev = await this._waitForActivity("readerConfig", 1500);
-      this.vmcConfig = { vmcFeatureLevel, columns, rows, displayType, displayTypeCode };
-      return ev.config;
-    });
-  }
-
-  async _waitForActivity(eventName, timeoutMs) {
-    return await new Promise((resolve, reject) => {
-      const t = setTimeout(() => {
-        cleanup();
-        reject(new ProtocolError("Timeout waiting for activity", { code: "TIMEOUT", details: { eventName } }));
-      }, timeoutMs);
-
-      const onEv = (ev) => {
-        cleanup();
-        resolve(ev);
-      };
-
-      const cleanup = () => {
-        clearTimeout(t);
-        this.removeListener(eventName, onEv);
-      };
-
-      this.on(eventName, onEv);
+      return await this._sendAndWait(cmd, { expect: "READER_CONFIG" });
     });
   }
 
   /**
-   * Setup max/min prices for cashless device.
+   * SETUP/01 Max-Min Prices (11 01 YY YY YY YY) WITHOUT CHK.
+   * Some Wafer/Nayax combinations may reply with ACK, others may be silent (seen in manual),
+   * so default behavior is "ACK_OR_SILENCE".
    *
    * @param {object} p
-   * @param {number} p.maxPriceScaled - max price in scaled integer units (u16, 0..65535)
-   * @param {number} p.minPriceScaled - min price in scaled integer units (u16, 0..65535)
+   * @param {number} [p.maxPriceScaled=0xFFFF]
+   * @param {number} [p.minPriceScaled=0x0000]
    * @param {number} [p.timeoutMs=600]
    */
-  async setupMaxMinPrices(p) {
+  async setupMaxMinPrices(p = {}) {
     return await this._enqueue(async () => {
       const {
         maxPriceScaled = 0xFFFF,
@@ -876,98 +1181,199 @@ export default class MdbRs232Cashless extends EventEmitter {
         minHi, minLo,
       ]);
 
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs });
+      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs });
     });
   }
 
   /**
-   * Enable reader (VMC allows card interaction).
+   * EXPANSION/00 Request ID (17 00) WITHOUT CHK.
+   * Reply may arrive as:
+   *  - reply data starting with 09 ... (often multi-message), OR
+   *  - activity data: [DeviceID] 09 ...
+   *
+   * Module collects blocks until full Peripheral ID (34 bytes) is assembled.
    */
-  async readerEnable() {
+  async expansionRequestId() {
     return await this._enqueue(async () => {
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_READER), MDB_READER_SUBCMD_ENABLE]);
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 600 });
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_EXPANSION),
+        MDB_EXPANSION_SUBCMD_REQUEST_ID,
+      ]);
+
+      // Use a longer timeout for multi-message collection.
+      return await this._sendAndWait(cmd, { expect: "MULTI_PERIPHERAL_ID", timeoutMs: this.multiBlockTimeoutMs });
     });
   }
 
   /**
-   * Disable reader.
+   * EXPANSION/04 Optional Feature Enable: 17 04 BB BB BB BB
+   *
+   * @param {number} featureMask32 32-bit mask (see OPT_FEATURE_* constants)
+   */
+  async expansionEnableOptions(featureMask32) {
+    return await this._enqueue(async () => {
+      const mask = featureMask32 >>> 0;
+      const [b0, b1, b2, b3] = encodeU32BE(mask);
+
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_EXPANSION),
+        MDB_EXPANSION_SUBCMD_OPTIONAL_FEATURE_ENABLE,
+        b0, b1, b2, b3,
+      ]);
+
+      return await this._sendAndWait(cmd, { expect: "ACK" });
+    });
+  }
+
+  /**
+   * READER CONTROL: Disable (14 00)
    */
   async readerDisable() {
     return await this._enqueue(async () => {
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_READER), MDB_READER_SUBCMD_DISABLE]);
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 600 });
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_READER_CONTROL),
+        MDB_READER_CTRL_DISABLE,
+      ]);
+      return await this._sendAndWait(cmd, { expect: "ACK" });
     });
   }
 
   /**
-   * Send Vend Request (Product First / Always Idle: send after product selection to make reader wait for card).
-   *
-   * @param {object} p
-   * @param {number} p.priceScaled - price in scaled units
-   * @param {number} p.itemNumber - item/selection number (u16)
-   * @param {boolean} [p.use32bit=false] - encode price as u32 (requires feature/option support)
+   * READER CONTROL: Enable (14 01)
    */
-  async vendRequest(p) {
+  async readerEnable() {
     return await this._enqueue(async () => {
-      const { priceScaled, itemNumber, use32bit = false } = p || {};
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_READER_CONTROL),
+        MDB_READER_CTRL_ENABLE,
+      ]);
+      return await this._sendAndWait(cmd, { expect: "ACK" });
+    });
+  }
+
+  /**
+   * READER CONTROL: Cancel (14 02) - optional.
+   */
+  async readerCancel() {
+    return await this._enqueue(async () => {
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_READER_CONTROL),
+        MDB_READER_CTRL_CANCEL,
+      ]);
+      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs: 600 });
+    });
+  }
+
+  /**
+   * VEND/00 Vend Request.
+   * Standard (16-bit money): 13 00 PP PP II II
+   * Expanded (32-bit money): 13 00 PP PP PP PP II II
+   *
+   * @param {object} r
+   * @param {number} r.priceScaled     Price in scaled units (u16 or u32 depending on mode).
+   * @param {number} [r.itemNumber=0xFFFF]  Item number (u16) or 0xFFFF.
+   * @param {boolean} [r.use32bit=false] Force 32-bit price format (if reader supports and enabled).
+   */
+  async vendRequest(r) {
+    return await this._enqueue(async () => {
+      const { priceScaled, itemNumber = 0xFFFF, use32bit = false } = r ?? {};
       if (!Number.isInteger(priceScaled) || priceScaled < 0) {
-        throw new ProtocolError("priceScaled must be integer >= 0", { code: "BAD_PRICE", details: { priceScaled } });
-      }
-      if (!Number.isInteger(itemNumber) || itemNumber < 0 || itemNumber > 0xFFFF) {
-        throw new ProtocolError("itemNumber must be u16", { code: "BAD_ITEM", details: { itemNumber } });
+        throw new ProtocolError("priceScaled must be non-negative integer", {
+          code: "BAD_PRICE",
+          details: { priceScaled },
+        });
       }
 
-      const [iHi, iLo] = encodeU16BE(itemNumber);
+      const [iiHi, iiLo] = encodeU16BE(itemNumber);
 
       let cmd;
       if (use32bit) {
-        const [p0, p1, p2, p3] = encodeU32BE(priceScaled);
-        // Bridge-specific 32-bit vend request encoding:
-        // [13][00][price32][item16]
-        cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_VEND), MDB_VEND_SUBCMD_REQUEST, p0, p1, p2, p3, iHi, iLo]);
+        const [p0, p1, p2, p3] = encodeU32BE(priceScaled >>> 0);
+        cmd = Buffer.from([
+          this._cmd(MDB_CASHLESS_CMD_VEND),
+          MDB_VEND_SUBCMD_REQUEST,
+          p0, p1, p2, p3,
+          iiHi, iiLo,
+        ]);
       } else {
-        const [pHi, pLo] = encodeU16BE(priceScaled);
-        // Standard 16-bit encoding:
-        // [13][00][price16][item16]
-        cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_VEND), MDB_VEND_SUBCMD_REQUEST, pHi, pLo, iHi, iLo]);
+        const [ppHi, ppLo] = encodeU16BE(priceScaled);
+        cmd = Buffer.from([
+          this._cmd(MDB_CASHLESS_CMD_VEND),
+          MDB_VEND_SUBCMD_REQUEST,
+          ppHi, ppLo,
+          iiHi, iiLo,
+        ]);
       }
 
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 800 });
-    });
-  }
+      this.session.lastVendPriceScaled = priceScaled;
+      this.session.lastVendItem = itemNumber;
 
-  async vendCancel() {
-    return await this._enqueue(async () => {
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_VEND), MDB_VEND_SUBCMD_CANCEL]);
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 800 });
-    });
-  }
-
-  async vendSuccess(itemNumber) {
-    return await this._enqueue(async () => {
-      const [iHi, iLo] = encodeU16BE(itemNumber);
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_VEND), MDB_VEND_SUBCMD_SUCCESS, iHi, iLo]);
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 800 });
-    });
-  }
-
-  async vendFailure() {
-    return await this._enqueue(async () => {
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_VEND), MDB_VEND_SUBCMD_FAILURE]);
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 800 });
-    });
-  }
-
-  async sessionComplete() {
-    return await this._enqueue(async () => {
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_VEND), MDB_VEND_SUBCMD_SESSION_COMPLETE]);
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 800 });
+      // In MDB cashless, vend request typically replies ACK/NAK (bridge reply data).
+      return await this._sendAndWait(cmd, { expect: "ACK" });
     });
   }
 
   /**
-   * Revalue request (Level 2/3).
+   * VEND/01 Vend Cancel: 13 01
+   * Reader should respond with Vend Denied (activity 10 06).
+   */
+  async vendCancel() {
+    return await this._enqueue(async () => {
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_VEND),
+        MDB_VEND_SUBCMD_CANCEL,
+      ]);
+      // Often ACK, but can be silent on some readers; keep tolerant.
+      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs: 600 });
+    });
+  }
+
+  /**
+   * VEND/02 Vend Success: 13 02 II II
+   */
+  async vendSuccess(itemNumber = 0xFFFF) {
+    return await this._enqueue(async () => {
+      const [iiHi, iiLo] = encodeU16BE(itemNumber);
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_VEND),
+        MDB_VEND_SUBCMD_SUCCESS,
+        iiHi, iiLo,
+      ]);
+      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs: 800 });
+    });
+  }
+
+  /**
+   * VEND/03 Vend Failure: 13 03
+   * Meaning: refund (if supported by reader).
+   */
+  async vendFailure() {
+    return await this._enqueue(async () => {
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_VEND),
+        MDB_VEND_SUBCMD_FAILURE,
+      ]);
+      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs: 800 });
+    });
+  }
+
+  /**
+   * VEND/04 Session Complete: 13 04
+   * Reader should respond with End Session (activity 10 07).
+   */
+  async sessionComplete() {
+    return await this._enqueue(async () => {
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_VEND),
+        MDB_VEND_SUBCMD_SESSION_COMPLETE,
+      ]);
+      this.session.active = false;
+      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs: 800 });
+    });
+  }
+
+  /**
+   * REVALUE/00 Revalue Request: 15 00 AA AA
    */
   async revalueRequest(amountScaled) {
     return await this._enqueue(async () => {
@@ -977,51 +1383,21 @@ export default class MdbRs232Cashless extends EventEmitter {
         MDB_REVALUE_SUBCMD_REQUEST,
         aHi, aLo,
       ]);
-      return await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 800 });
+      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs: 800 });
     });
   }
 
   /**
-   * Expansion Request ID (Multi-peripheral ID).
+   * REVALUE/01 Revalue Limit Request: 15 01
+   * Reader responds with activity 10 0F (limit) or 10 0E (denied).
    */
-  async expansionRequestId() {
+  async revalueLimitRequest() {
     return await this._enqueue(async () => {
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_EXPANSION), MDB_EXP_SUBCMD_REQUEST_ID]);
-      await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 800 });
-
-      // The response comes as activity peripheralId (0x09) over Poll.
-      const ev = await this._waitForActivity("peripheralId", 1200);
-      return {
-        manufacturer: ev.manufacturer,
-        model: ev.model,
-        serial: ev.serial,
-        version: ev.version,
-        options: ev.options,
-      };
-    });
-  }
-
-  /**
-   * Expansion Enable Options (enable features like Always Idle).
-   *
-   * @param {number} optionsMask - bitmask of features (use CashlessConstants.OPT_*).
-   */
-  async expansionEnableOptions(optionsMask) {
-    return await this._enqueue(async () => {
-      if (!Number.isInteger(optionsMask) || optionsMask < 0 || optionsMask > 0xFF) {
-        throw new ProtocolError("optionsMask must be u8", { code: "BAD_OPT", details: { optionsMask } });
-      }
-
-      // For this bridge, Nayax requires:
-      // 17 04 00 00 00 20  (example enabling Always Idle)
-      // i.e. [17][04][opt32]
-      const opt32 = optionsMask >>> 0;
-      const [o0, o1, o2, o3] = encodeU32BE(opt32);
-
-      const cmd = Buffer.from([this._cmd(MDB_CASHLESS_CMD_EXPANSION), MDB_EXP_SUBCMD_ENABLE, o0, o1, o2, o3]);
-      await this._sendAndWait(cmd, { expect: "ACK", timeoutMs: 900 });
-      this.expansionOptions = optionsMask & 0xFF;
-      return { optionsMask: this.expansionOptions };
+      const cmd = Buffer.from([
+        this._cmd(MDB_CASHLESS_CMD_REVALUE),
+        MDB_REVALUE_SUBCMD_LIMIT_REQUEST,
+      ]);
+      return await this._sendAndWait(cmd, { expect: "ACK_OR_SILENCE", timeoutMs: 800 });
     });
   }
 
@@ -1048,14 +1424,10 @@ export default class MdbRs232Cashless extends EventEmitter {
   }
 
   /**
-   * Convert real value (float) to scaled integer using last known readerConfig.
-   *
-   * @param {number} real
-   * @param {object} [opts]
-   * @param {"nearest"|"floor"|"ceil"} [opts.rounding="nearest"] - rounding strategy
-   * @param {boolean} [opts.strict=false] - if true, throw when value is not exactly representable for current scaling
+   * Convert real value (number) to scaled integer using last known readerConfig (round to nearest int).
    */
-  realToScaled(real, opts = undefined) {
+
+  realToScaled(real) {
     if (!this.readerConfig) {
       throw new ProtocolError("readerConfig unknown; call setupConfig first", { code: "NO_CFG" });
     }
@@ -1065,29 +1437,7 @@ export default class MdbRs232Cashless extends EventEmitter {
     // scaled P = actual / (ScaleFactor * 10^(-DecimalPlaces))
     // => P = actual * 10^decimalPlaces / scalingFactor
     const mul = Math.pow(10, decimalPlaces);
-    const exact = (real * mul) / scalingFactor;
-
-    const { rounding = "nearest", strict = false } = opts || {};
-
-    let scaled;
-    if (rounding === "floor") scaled = Math.floor(exact);
-    else if (rounding === "ceil") scaled = Math.ceil(exact);
-    else scaled = Math.round(exact); // "nearest" default
-
-    // If strict, require the real value to be exactly representable with current scaling.
-    // This prevents silent rounding when price step is coarse (e.g. scalingFactor=100, decimalPlaces=2 => step=1.00).
-    if (strict) {
-      const eps = 1e-9;
-      if (Math.abs(exact - scaled) > eps) {
-        const stepReal = scalingFactor / mul; // minimal representable increment in real currency units
-        throw new ProtocolError("Price is not representable for current scaling; would be rounded", {
-          code: "PRICE_NOT_REPRESENTABLE",
-          details: { real, exactScaled: exact, roundedScaled: scaled, stepReal, scalingFactor, decimalPlaces },
-        });
-      }
-    }
-
-    return scaled;
+    return Math.round((real * mul) / scalingFactor);
   }
 }
 
@@ -1101,45 +1451,35 @@ export const CashlessConstants = {
   DEVICE_ID_CASHLESS_1,
   DEVICE_ID_CASHLESS_2,
 
-  // Commands
-  MDB_CASHLESS_CMD_POLL,
-  MDB_CASHLESS_CMD_SETUP,
-  MDB_CASHLESS_CMD_VEND,
-  MDB_CASHLESS_CMD_READER,
-  MDB_CASHLESS_CMD_REVALUE,
-  MDB_CASHLESS_CMD_EXPANSION,
-
-  // Subcommands
-  MDB_SETUP_SUBCMD_CONFIG,
-  MDB_SETUP_SUBCMD_MAX_MIN_PRICES,
-
-  MDB_READER_SUBCMD_DISABLE,
-  MDB_READER_SUBCMD_ENABLE,
-
-  MDB_VEND_SUBCMD_REQUEST,
-  MDB_VEND_SUBCMD_CANCEL,
-  MDB_VEND_SUBCMD_SUCCESS,
-  MDB_VEND_SUBCMD_FAILURE,
-  MDB_VEND_SUBCMD_SESSION_COMPLETE,
-
-  MDB_REVALUE_SUBCMD_REQUEST,
-  MDB_REVALUE_SUBCMD_LIMIT,
-
-  MDB_EXP_SUBCMD_REQUEST_ID,
-  MDB_EXP_SUBCMD_ENABLE,
-
-  // Expansion options
-  OPT_FEATURE_ALWAYS_IDLE,
+  // Optional feature bits
+  OPT_FEATURE_FILE_TRANSPORT_LAYER,
   OPT_FEATURE_32BIT_MONEY,
+  OPT_FEATURE_MULTI_CURRENCY_LANG,
+  OPT_FEATURE_NEGATIVE_VEND,
+  OPT_FEATURE_DATA_ENTRY,
+  OPT_FEATURE_ALWAYS_IDLE,
 
-  // BEGIN SESSION paymentType decode constants (useful for debugging)
-  PAYMENT_TYPE_FLAG_FREE_VEND,
-  PAYMENT_TYPE_FLAG_TEST_MEDIA,
-  PAYMENT_TYPE_MODE_MASK,
+  // Poll codes (cashless activity)
+  POLL_JUST_RESET,
+  POLL_READER_CONFIG_DATA,
+  POLL_DISPLAY_REQUEST,
+  POLL_BEGIN_SESSION,
+  POLL_SESSION_CANCEL_REQUEST,
+  POLL_VEND_APPROVED,
+  POLL_VEND_DENIED,
+  POLL_END_SESSION,
+  POLL_CANCELLED,
+  POLL_PERIPHERAL_ID,
+  POLL_MALFUNCTION,
+  POLL_CMD_OUT_OF_SEQUENCE,
+  POLL_REVALUE_APPROVED,
+  POLL_REVALUE_DENIED,
+  POLL_REVALUE_LIMIT_AMOUNT,
 
-  PAYMENT_TYPE_MODE_DEFAULT_PRICES,
-  PAYMENT_TYPE_MODE_USERGROUP_PRICELIST,
-  PAYMENT_TYPE_MODE_USERGROUP_DISCOUNTGROUP,
-  PAYMENT_TYPE_MODE_DISCOUNT_PERCENT,
-  PAYMENT_TYPE_MODE_SURCHARGE_PERCENT,
+  // Bridge ack bytes
+  BRIDGE_BLOCK_ACK,
+  BRIDGE_REPLY_ACK,
+  BRIDGE_REPLY_NAK,
 };
+
+export default MdbRs232Cashless;

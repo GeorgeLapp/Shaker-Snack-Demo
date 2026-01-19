@@ -1,0 +1,15 @@
+{
+  "name": "mdb-rs232-bridge",
+  "version": "2.0.2",
+  "description": "Модуль реализует работу контроллера автомата (VMC) с мостом Wafer MDB-RS232 по RS-232 для сценария безналичной оплаты (MDB Cashless Reader).",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "serialport": "^13.0.0"
+  }
+}

@@ -6,7 +6,6 @@ const {
   processPayment,
   finalizePaymentAfterVend,
   cancelPayment,
-  PaymentError,
   warmupPaymentDevice,
 } = require('../services/paymentDevice');
 const PRICE_SCALE = 100;

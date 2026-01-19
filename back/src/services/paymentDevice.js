@@ -13,7 +13,6 @@ function parseBoolean(value, fallback = false) {
   return fallback;
 }
 
-const PAYMENT_DELAY_MS = Number(process.env.PAYMENT_DELAY_MS || 5000);
 const PAYMENT_APPROVAL_TIMEOUT_MS = Number(
   process.env.PAYMENT_APPROVAL_TIMEOUT_MS || 20000,
 );
@@ -27,18 +26,6 @@ const PAYMENT_CASHLESS_NUMBER = Number(process.env.PAYMENT_CASHLESS_NUMBER || 1)
 const PAYMENT_DEBUG = parseBoolean(process.env.PAYMENT_DEVICE_DEBUG, false);
 const FORCE_32BIT_PRICE = parseBoolean(process.env.PAYMENT_FORCE_32BIT_PRICE, false);
 
-const parseNumberList = (value) => {
-  if (!value) return [];
-  return String(value)
-    .split(',')
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isInteger(item) && item > 0);
-};
-
-const DEFAULT_FAIL_CELLS = parseNumberList(
-  process.env.PAYMENT_DEVICE_FAIL_CELL_NUMBERS || '',
-);
-
 class PaymentError extends Error {
   constructor(message, { code = 'PAYMENT_ERROR', statusCode = 402, details } = {}) {
     super(message);
@@ -49,15 +36,10 @@ class PaymentError extends Error {
   }
 }
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-let emulationEnabled = parseBoolean(process.env.PAYMENT_DEVICE_EMULATOR, true);
 let activeSession = null;
 let hardwareDriver = null;
 let hardwareInitPromise = null;
 let hardwareConstants = null;
-
-const shouldFail = (cellNumber) => DEFAULT_FAIL_CELLS.includes(cellNumber);
 
 const clearExpiredSession = () => {
   if (!activeSession) return null;
@@ -88,35 +70,6 @@ const ensureNoActiveSession = () => {
       details: { cellNumber: current.cellNumber, sessionId: current.id },
     });
   }
-};
-
-const emulatePayment = async ({ cellNumber }) => {
-  if (Number.isFinite(PAYMENT_DELAY_MS) && PAYMENT_DELAY_MS > 0) {
-    await delay(PAYMENT_DELAY_MS);
-  }
-
-  if (shouldFail(cellNumber)) {
-    throw new PaymentError('Payment rejected by payment emulator', {
-      code: 'PAYMENT_DECLINED',
-      statusCode: 402,
-      details: { cellNumber },
-    });
-  }
-
-  const reference = `emu-${Date.now()}`;
-
-  setActiveSession({
-    id: reference,
-    mode: 'emulator',
-    cellNumber,
-    state: 'approved',
-    createdAt: Date.now(),
-  });
-
-  return {
-    success: true,
-    reference,
-  };
 };
 
 const loadHardwareModule = async () => {
@@ -383,10 +336,6 @@ const processPayment = async ({ cellNumber, price, productId } = {}) => {
 
   ensureNoActiveSession();
 
-  if (emulationEnabled) {
-    return emulatePayment({ cellNumber, price, productId });
-  }
-
   const driver = await ensureHardwareDriver();
   const { scaled, use32bit } = scalePrice(driver, price);
   const sessionId = `hw-${Date.now()}`;
@@ -439,11 +388,6 @@ const cancelPayment = async () => {
     return;
   }
 
-  if (session.mode === 'emulator') {
-    setActiveSession(null);
-    return;
-  }
-
   try {
     const driver = await ensureHardwareDriver();
     await driver.vendCancel();
@@ -475,11 +419,6 @@ const finalizePaymentAfterVend = async ({
 
   session.state = 'finalizing';
 
-  if (session.mode === 'emulator') {
-    setActiveSession(null);
-    return;
-  }
-
   try {
     const driver = await ensureHardwareDriver();
     if (success) {
@@ -510,10 +449,6 @@ const finalizePaymentAfterVend = async ({
 };
 
 const warmupPaymentDevice = async () => {
-  if (emulationEnabled) {
-    logEvent('payment.emulator.enabled', {});
-    return;
-  }
   try {
     await ensureHardwareDriver();
     logEvent('payment.hardware.ready', {});
@@ -522,20 +457,10 @@ const warmupPaymentDevice = async () => {
   }
 };
 
-const isPaymentEmulationEnabled = () => emulationEnabled;
-
-const setPaymentEmulationEnabled = (enabled) => {
-  emulationEnabled = Boolean(enabled);
-  logEvent('payment.emulation.toggle', { enabled: emulationEnabled });
-  return emulationEnabled;
-};
-
 module.exports = {
   processPayment,
   finalizePaymentAfterVend,
   cancelPayment,
   warmupPaymentDevice,
-  isPaymentEmulationEnabled,
-  setPaymentEmulationEnabled,
   PaymentError,
 };

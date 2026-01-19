@@ -5,10 +5,6 @@ const { URL } = require('url');
 const { getProductMatrix, startSale, issueProduct, cancelSale } = require('./controllers/clientController');
 const { parseJsonBody, sendJson } = require('./utils/requestUtils');
 const { logEvent } = require('./logger');
-const {
-  isPaymentEmulationEnabled,
-  setPaymentEmulationEnabled,
-} = require('./services/paymentDevice');
 
 const ensureLeadingSlash = (value) => (value.startsWith('/') ? value : `/${value}`);
 const ensureTrailingSlash = (value) => (value.endsWith('/') ? value : `${value}/`);
@@ -159,23 +155,6 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (req.method === 'GET' && pathname === '/api/emulation/payment') {
-      sendJson(res, 200, { enabled: isPaymentEmulationEnabled() });
-      return;
-    }
-
-    if (req.method === 'POST' && pathname === '/api/emulation/payment') {
-      const payload = await parseJsonBody(req);
-      const enabled = payload?.enabled;
-      if (typeof enabled !== 'boolean') {
-        sendJson(res, 400, { message: '"enabled" must be a boolean' });
-        return;
-      }
-      const current = setPaymentEmulationEnabled(enabled);
-      sendJson(res, 200, { success: true, enabled: current });
-      return;
-    }
-
     if (req.method === 'GET' && pathname === '/api/product-matrix') {
       const data = await getProductMatrix();
       sendJson(res, 200, data);

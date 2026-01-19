@@ -48,6 +48,15 @@ let hardwareOptions = {
   money32: null,
   raw: null,
 };
+const PAYMENT_INIT_BOOT_DELAY_MS = Number(
+  process.env.PAYMENT_INIT_BOOT_DELAY_MS || 1200,
+);
+const PAYMENT_INIT_RETRY_COUNT = Number(
+  process.env.PAYMENT_INIT_RETRY_COUNT || 3,
+);
+const PAYMENT_INIT_RETRY_DELAY_MS = Number(
+  process.env.PAYMENT_INIT_RETRY_DELAY_MS || 800,
+);
 
 const clearExpiredSession = () => {
   if (!activeSession) return null;
@@ -79,6 +88,8 @@ const ensureNoActiveSession = () => {
     });
   }
 };
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const loadHardwareModule = async () => {
   const modulePath = path.resolve(
@@ -167,98 +178,118 @@ const ensureHardwareDriver = async () => {
       cashlessNumber: PAYMENT_CASHLESS_NUMBER,
     });
 
-    try {
-      await driver.flush();
-    } catch (err) {
-      logEvent('payment.hardware.flush.warn', { message: err.message });
-    }
+    const initSequence = async () => {
+      // Reset and wake up bridge
+      try {
+        await driver.reset();
+      } catch (err) {
+        logEvent('payment.hardware.reset.failed', { message: err.message });
+      }
 
-    await new Promise((resolve) => setTimeout(resolve, 150));
+      // Request optional feature bits then enable Always Idle (early init)
+      let idInfo = null;
+      try {
+        idInfo = await driver.expansionRequestId(1600);
+      } catch (err) {
+        logEvent('payment.hardware.expansion.requestId.warn', { message: err.message });
+      }
 
-    // Reset and wake up bridge
-    try {
-      await driver.reset();
-    } catch (err) {
-      logEvent('payment.hardware.reset.failed', { message: err.message });
-    }
+      if (idInfo?.options && Buffer.isBuffer(idInfo.options) && idInfo.options.length > 0) {
+        const optByte = idInfo.options[idInfo.options.length - 1];
+        hardwareOptions = {
+          alwaysIdle: (optByte & (hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0)) !== 0,
+          money32: (optByte & (hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0)) !== 0,
+          raw: idInfo.options,
+        };
+        logEvent('payment.hardware.options.detected', {
+          raw: idInfo.options.toString('hex').toUpperCase(),
+          alwaysIdle: hardwareOptions.alwaysIdle,
+          money32: hardwareOptions.money32,
+        });
+      } else {
+        hardwareOptions = { alwaysIdle: null, money32: null, raw: null };
+        logEvent('payment.hardware.options.unknown', {});
+      }
 
-    // Request optional feature bits then enable Always Idle (early init)
-    let idInfo = null;
-    try {
-      idInfo = await driver.expansionRequestId(1600);
-    } catch (err) {
-      logEvent('payment.hardware.expansion.requestId.warn', { message: err.message });
-    }
+      if (hardwareOptions.alwaysIdle === false) {
+        throw new PaymentError('Always Idle is not supported by reader', {
+          code: 'PAYMENT_ALWAYS_IDLE_UNSUPPORTED',
+          statusCode: 503,
+          details: { options: hardwareOptions.raw?.toString('hex') || null },
+        });
+      }
 
-    if (idInfo?.options && Buffer.isBuffer(idInfo.options) && idInfo.options.length > 0) {
-      const optByte = idInfo.options[idInfo.options.length - 1];
-      hardwareOptions = {
-        alwaysIdle: (optByte & (hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0)) !== 0,
-        money32: (optByte & (hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0)) !== 0,
-        raw: idInfo.options,
-      };
-      logEvent('payment.hardware.options.detected', {
-        raw: idInfo.options.toString('hex').toUpperCase(),
-        alwaysIdle: hardwareOptions.alwaysIdle,
-        money32: hardwareOptions.money32,
+      const optionsMask =
+        (hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0) |
+        (hardwareOptions.money32 ? hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0 : 0);
+
+      try {
+        await driver.expansionEnableOptions(optionsMask, { timeoutMs: 1500 });
+        logEvent('payment.hardware.options.enabled', { optionsMask });
+      } catch (err) {
+        throw new PaymentError('Failed to enable Always Idle mode', {
+          code: 'PAYMENT_ALWAYS_IDLE_FAILED',
+          statusCode: 503,
+          details: { message: err.message },
+        });
+      }
+
+      // Base config (Feature Level 3, ASCII display)
+      const cfg = await driver.setupConfig({
+        vmcFeatureLevel: 3,
+        columns: 0,
+        rows: 0,
+        displayType: 'fullAscii',
       });
-    } else {
-      hardwareOptions = { alwaysIdle: null, money32: null, raw: null };
-      logEvent('payment.hardware.options.unknown', {});
-    }
-
-    if (hardwareOptions.alwaysIdle === false) {
-      throw new PaymentError('Always Idle is not supported by reader', {
-        code: 'PAYMENT_ALWAYS_IDLE_UNSUPPORTED',
-        statusCode: 503,
-        details: { options: hardwareOptions.raw?.toString('hex') || null },
+      logEvent('payment.hardware.readerConfig', {
+        scalingFactor: cfg?.scalingFactor,
+        decimalPlaces: cfg?.decimalPlaces,
       });
-    }
 
-    const optionsMask =
-      (hardwareConstants.OPT_FEATURE_ALWAYS_IDLE || 0) |
-      (hardwareOptions.money32 ? hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0 : 0);
+      await driver.setupMaxMinPrices({
+        maxPriceScaled: 0xffff,
+        minPriceScaled: 0x0000,
+      });
 
-    try {
+      // Re-apply Always Idle after setup to ensure it stays enabled.
       await driver.expansionEnableOptions(optionsMask, { timeoutMs: 1500 });
-      logEvent('payment.hardware.options.enabled', { optionsMask });
-    } catch (err) {
-      throw new PaymentError('Failed to enable Always Idle mode', {
-        code: 'PAYMENT_ALWAYS_IDLE_FAILED',
-        statusCode: 503,
-        details: { message: err.message },
-      });
-    }
+      logEvent('payment.hardware.options.reapplied', { optionsMask });
 
-    // Base config (Feature Level 3, ASCII display)
-    const cfg = await driver.setupConfig({
-      vmcFeatureLevel: 3,
-      columns: 0,
-      rows: 0,
-      displayType: 'fullAscii',
-    });
-    logEvent('payment.hardware.readerConfig', {
-      scalingFactor: cfg?.scalingFactor,
-      decimalPlaces: cfg?.decimalPlaces,
-    });
-
-    await driver.setupMaxMinPrices({
-      maxPriceScaled: 0xffff,
-      minPriceScaled: 0x0000,
-    });
-
-    // Re-apply Always Idle after setup to ensure it stays enabled.
-    await driver.expansionEnableOptions(optionsMask, { timeoutMs: 1500 });
-    logEvent('payment.hardware.options.reapplied', { optionsMask });
+      try {
+        await driver.readerEnable();
+      } catch (err) {
+        throw new PaymentError('Failed to enable cashless reader', {
+          code: 'PAYMENT_READER_ENABLE_FAILED',
+          statusCode: 503,
+          details: { message: err.message },
+        });
+      }
+    };
 
     try {
-      await driver.readerEnable();
-    } catch (err) {
-      throw new PaymentError('Failed to enable cashless reader', {
-        code: 'PAYMENT_READER_ENABLE_FAILED',
-        statusCode: 503,
-        details: { message: err.message },
-      });
+      await sleep(PAYMENT_INIT_BOOT_DELAY_MS);
+    } catch {}
+
+    for (let attempt = 1; attempt <= PAYMENT_INIT_RETRY_COUNT; attempt += 1) {
+      try {
+        await driver.flush();
+      } catch (err) {
+        logEvent('payment.hardware.flush.warn', { message: err.message });
+      }
+
+      try {
+        await initSequence();
+        break;
+      } catch (err) {
+        if (attempt >= PAYMENT_INIT_RETRY_COUNT) {
+          throw err;
+        }
+        logEvent('payment.hardware.init.retry', {
+          attempt,
+          message: err.message,
+        });
+        await sleep(PAYMENT_INIT_RETRY_DELAY_MS);
+      }
     }
 
     driver.startPoller();

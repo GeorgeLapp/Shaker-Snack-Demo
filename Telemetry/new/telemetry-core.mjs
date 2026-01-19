@@ -712,15 +712,20 @@ class TelemetryDb {
     await this.ensureReady();
     await this.runInTransaction(async () => {
       for (const cell of cells) {
+        const volume =
+          typeof cell.volume === 'number' && Number.isFinite(cell.volume)
+            ? Math.max(0, cell.volume)
+            : 0;
+
         await this.runAsync(
           `
           UPDATE matrix_cell_state
-             SET volume = $volume,
+             SET volume = MIN(max_volume, $volume),
                  updated_at = $now
            WHERE cell_number = $cellNumber
           `,
           {
-            $volume: cell.volume,
+            $volume: volume,
             $now: Date.now(),
             $cellNumber: cell.cellNumber
           }

@@ -83,17 +83,20 @@ const ensureNoActiveSession = () => {
 const loadHardwareModule = async () => {
   const modulePath = path.resolve(
     __dirname,
-    '../../../Payment/mdb-rs232-cashless.mjs',
+    './mdb-rs232-cashless.mjs',
   );
   const moduleUrl = pathToFileURL(modulePath).href;
   try {
     return await import(moduleUrl);
   } catch (err) {
-    throw new PaymentError('Payment driver module is not available', {
+    throw new PaymentError(
+      `Payment driver module is not available: ${err.message}`,
+      {
       code: 'PAYMENT_MODULE_NOT_FOUND',
       statusCode: 503,
       details: { modulePath, message: err.message },
-    });
+      },
+    );
   }
 };
 

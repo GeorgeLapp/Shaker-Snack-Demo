@@ -9,6 +9,7 @@
     "dev": "node src/server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^9.0.0"
+    "better-sqlite3": "^9.0.0",
+    "serialport": "^12.0.0"
   }
 }

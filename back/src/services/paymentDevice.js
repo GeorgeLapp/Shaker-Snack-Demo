@@ -155,6 +155,7 @@ const ensureHardwareDriver = async () => {
       cashlessNumber: PAYMENT_CASHLESS_NUMBER,
       baudRate: PAYMENT_BAUD_RATE,
       debug: PAYMENT_DEBUG,
+      autoPoll: false,
     });
 
     attachDriverLogging(driver);
@@ -166,6 +167,14 @@ const ensureHardwareDriver = async () => {
       cashlessNumber: PAYMENT_CASHLESS_NUMBER,
     });
 
+    try {
+      await driver.flush();
+    } catch (err) {
+      logEvent('payment.hardware.flush.warn', { message: err.message });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     // Reset and wake up bridge
     try {
       await driver.reset();
@@ -176,7 +185,7 @@ const ensureHardwareDriver = async () => {
     // Request optional feature bits then enable Always Idle (early init)
     let idInfo = null;
     try {
-      idInfo = await driver.expansionRequestId();
+      idInfo = await driver.expansionRequestId(1600);
     } catch (err) {
       logEvent('payment.hardware.expansion.requestId.warn', { message: err.message });
     }
@@ -211,7 +220,7 @@ const ensureHardwareDriver = async () => {
       (hardwareOptions.money32 ? hardwareConstants.OPT_FEATURE_32BIT_MONEY || 0 : 0);
 
     try {
-      await driver.expansionEnableOptions(optionsMask);
+      await driver.expansionEnableOptions(optionsMask, { timeoutMs: 1500 });
       logEvent('payment.hardware.options.enabled', { optionsMask });
     } catch (err) {
       throw new PaymentError('Failed to enable Always Idle mode', {
@@ -239,7 +248,7 @@ const ensureHardwareDriver = async () => {
     });
 
     // Re-apply Always Idle after setup to ensure it stays enabled.
-    await driver.expansionEnableOptions(optionsMask);
+    await driver.expansionEnableOptions(optionsMask, { timeoutMs: 1500 });
     logEvent('payment.hardware.options.reapplied', { optionsMask });
 
     try {
@@ -251,6 +260,8 @@ const ensureHardwareDriver = async () => {
         details: { message: err.message },
       });
     }
+
+    driver.startPoller();
 
     hardwareDriver = driver;
     return driver;

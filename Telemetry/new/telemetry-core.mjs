@@ -49,6 +49,50 @@ const IMAGE_CONTENT_TYPE_EXTENSIONS = {
 // Класс работы с SQLite
 // =============================
 
+function normalizeIsActive(raw) {
+  if (typeof raw?.isActive === 'boolean') return raw.isActive;
+  if (typeof raw?.enabled === 'boolean') return raw.enabled;
+  if (typeof raw?.enabled === 'number') return raw.enabled !== 0;
+  return true;
+}
+
+function filterMasterCells(cells) {
+  return (cells || []).filter((cell) => {
+    if (!cell) return false;
+    const size = Number(cell.size ?? 0);
+    if (Number.isFinite(size) && size <= 0) return false;
+
+    const mergedTo =
+      cell?.mergedTo != null
+        ? Number(cell.mergedTo)
+        : cell?.merged_to != null
+        ? Number(cell.merged_to)
+        : null;
+
+    if (Number.isFinite(mergedTo) && mergedTo !== Number(cell.cellNumber)) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function prepareCellsForOutbound(cells) {
+  return filterMasterCells(
+    (cells || []).map((cell) => ({
+      ...cell,
+      size: Number(cell.size ?? 0),
+      mergedTo:
+        cell?.mergedTo != null
+          ? Number(cell.mergedTo)
+          : cell?.merged_to != null
+          ? Number(cell.merged_to)
+          : null,
+      isActive: normalizeIsActive(cell)
+    }))
+  );
+}
+
 class TelemetryDb {
   /**
    * @param {string} dbPath путь к SQLite-файлу
@@ -602,12 +646,14 @@ class TelemetryDb {
       size: row.size,
       volume: row.volume,
       maxVolume: row.maxVolume,
-      isActive: !!row.enabled
+      isActive: normalizeIsActive(row)
     }));
+
+    const filteredMatrix = filterMasterCells(matrix);
 
     return {
       machineId: machineInfo.machineId,
-      matrix
+      matrix: filteredMatrix
     };
   }
 
@@ -622,6 +668,8 @@ class TelemetryDb {
         const priceMinor = typeof cell.price === 'number'
           ? Math.round(cell.price * PRICE_SCALE)
           : null;
+
+        const enabledFlag = normalizeIsActive(cell) ? 1 : 0;
 
         await this.runAsync(
           `
@@ -653,7 +701,7 @@ class TelemetryDb {
             $size: cell.size ?? 0,
             $goodId: cell.goodId != null ? Number(cell.goodId) : null,
             $priceMinor: priceMinor,
-            $enabled: cell.isActive === false ? 0 : 1
+            $enabled: enabledFlag
           }
         );
 
@@ -1222,13 +1270,14 @@ export class TelemetryCore {
   async syncCellsPartial(cells) {
     const machine = await this.ensureMachineInfo();
     const requestUuid = this.generateRequestUuid();
+    const outboundCells = prepareCellsForOutbound(cells);
 
     const { ack, result } = await this.transport.send({
       type: TYPE_CELL_STORE_IMPORT_SNACK,
       body: {
         requestUuid,
         machineId: `MACHINE_ID_${machine.machineId}`,
-        cells
+        cells: outboundCells
       },
       timeoutMs: 20_000
     });

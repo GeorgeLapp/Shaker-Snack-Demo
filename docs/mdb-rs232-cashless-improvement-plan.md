@@ -80,6 +80,7 @@
 - При mismatch:
   - emit `warn` + пометка `chkOk=false`
   - опционально `failOnBadChk` (конфиг).
+- Для `SETUP Config Reply` требовать полную длину 9 байт; короткий ответ считать несовместимым (разрешить только в режиме совместимости).
 
 **Acceptance:** каждый Reply Data содержит `chk` и `chkOk` (если CHK ожидается).
 
@@ -104,6 +105,7 @@
 
 ### 4.3 Display Request (10 02 TT <data>)
 - Длина текста строго `columns × rows`.
+- Хранить `vmcDisplayColumns` и `vmcDisplayRows` из `SETUP Config Data`, так как в Reader Config эти поля не возвращаются.
 - Если columns/rows = 0 → событие игнорируется или маркируется `unsupportedDisplay`.
 - Если текст длинее/короче → trim/pad + warn.
 
@@ -184,6 +186,7 @@
 
 ### 5.8 VEND Cancel / Success / Failure / Session Complete
 - Оставить, но связать со state-machine.
+- По спецификации ожидать ACK/NAK (без режима молчания); режим совместимости с silence сделать опциональным.
 
 ### 5.9 CASH Sale (13 05)
 - Реализовать 16-bit и Expanded (32-bit + currency).
@@ -202,6 +205,12 @@
 - Time/Date Response
 - User File Response
 - Data Entry Response
+
+### 5.13 Таймауты команд по Z7
+- После `SETUP Config Data` получать `Z7` и:
+  - выставлять `commandTimeoutMs = max(5, Z7) * 1000` для команд с Reply Data;
+  - выставлять `multiBlockTimeoutMs >= max(5, Z7) * 1000` для EXPANSION Request ID;
+  - использовать `max(5, Z7)` как offline threshold (keep-alive).
 
 **Acceptance:** полный набор команд из раздела 8 (включая optional) доступен через API.
 
@@ -242,7 +251,9 @@
 - Session Complete → Enabled
 - Revalue Request → Revalue
 - Data Entry Request → Data Entry
-- Cancelled → Session Idle/Enabled
+- Session Cancel Request → обязательный `SESSION Complete`, затем ожидание `End Session`
+- Vend Denied → обязательный `SESSION Complete`
+- Cancelled → обязательный `SESSION Complete`
 
 ### 7.3 Guard-валидация
 - Блокировать отправку команд в неправильном состоянии (emit error + no TX).
@@ -346,6 +357,7 @@
 - Технические детали:
   - Для однобайтовых reply (`0D`/`0E`) CHK не ожидается.
   - Reply Data всегда **без DeviceID**.
+  - `SETUP Config Reply` валиден только длиной 9 байт (01 Z2..Z8 CHK); более короткий reply — ошибка (если не включён режим совместимости).
 - Acceptance:
   - Любой reply, где CHK обязателен, даёт `chkOk=true` или корректно отклоняется.
 
@@ -485,6 +497,49 @@
   4) Добавить дефолтные значения (например, `MFG="VMC"`, `SERIAL="000000000000"`, `MODEL="SHKR-SNACK"`, `SWVER="0.01"`), но позволить переопределять через опции/ENV.
 - Acceptance:
   - Request ID всегда отправляется с корректной идентификацией VMC по разделу 8.4 (A1–A4).
+
+**13.1.11 Таймауты на основе Z7**
+- Где менять:
+  - `_decodeReaderConfigReply()` → сохранить `maxResponseTimeSec` (Z7).
+  - состояние класса: хранить `z7Seconds`, обновлять `commandTimeoutMs`.
+- Что сделать:
+  1) После получения Reader Config Data установить `this.z7Seconds = maxResponseTimeSec`.
+  2) Рассчитать `effectiveZ7 = Math.max(5, z7Seconds || 0)` (сек).
+  3) Обновить `this.commandTimeoutMs = effectiveZ7 * 1000` для Reply Data команд.
+  4) Для multi-message выставлять `multiBlockTimeoutMs` не ниже `effectiveZ7 * 1000`.
+  5) Применять эти же правила при получении Reader Config Data как activity.
+- Acceptance:
+  - Таймауты команд соответствуют Z7 из спецификации.
+
+**13.1.12 ACK vs Silence (строго по spec)**
+- Где менять:
+  - `setupMaxMinPrices()`, `readerCancel()`, `vendCancel()`, `vendSuccess()`, `vendFailure()`, `sessionComplete()` и аналогичные.
+- Что сделать:
+  1) По умолчанию ждать ACK/NAK (строго), silence → timeout/error.
+  2) Ввести флаг совместимости (например, `allowSilentAck`) для реальных устройств.
+- Acceptance:
+  - По умолчанию поведение строго соответствует таблице команд.
+
+**13.1.13 Сохранение исходных ASCII полей Peripheral ID**
+- Где менять:
+  - `_decodePeripheralId()`.
+- Что сделать:
+  1) Не использовать `.trim()` для serial/model; сохранять оригинальные 12 байт.
+  2) Возвращать оба варианта: `serialRaw`, `serialTrimmed`, `modelRaw`, `modelTrimmed`.
+- Acceptance:
+  - Идентификация ридера соответствует фиксированным ASCII полям из spec.
+
+**13.1.14 Display Request — строгая длина и хранение размеров**
+- Где менять:
+  - `setupConfig()` (сохранение `columns/rows` в состоянии драйвера).
+  - `_parseCashlessActivity()` → ветка `POLL_DISPLAY_REQUEST`.
+- Что сделать:
+  1) Сохранять `vmcDisplayColumns`/`vmcDisplayRows` при `setupConfig()` (и обновлять при повторном SETUP).
+  2) В Display Request вычислять `expectedLen = columns * rows`.
+  3) Если `expectedLen = 0` → помечать `unsupportedDisplay` и не обрабатывать текст.
+  4) Если длина не совпадает → warn + нормализация (pad/trim).
+- Acceptance:
+  - Display Request соответствует спецификации по длине и правилам отображения.
 
 ### 13.2 Этап 2
 32-bit форматы, SETUP Max/Min 32, Cash Sale, optional bits.
